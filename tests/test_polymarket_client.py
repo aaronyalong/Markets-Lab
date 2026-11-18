@@ -315,3 +315,27 @@ class TestIterEvents:
         recorder = Recorder(ok({"events": [{"id": "1"}]}))
         with make_client(recorder) as client, pytest.raises(PolymarketAPIError, match="slug"):
             list(client.iter_events(375))
+
+
+class TestRateChangesAndCounters:
+    def test_rate_can_be_changed_between_requests(self) -> None:
+        fake = FakeTime()
+        recorder = Recorder(handler=lambda _: ok({}))
+        with make_client(recorder, fake, requests_per_second=4) as client:
+            client.get_series("s")
+            client.get_series("s")
+            client.set_requests_per_second(0.25)
+            assert client.requests_per_second == 0.25
+            client.get_series("s")
+        assert fake.sleeps == [0.25, 4.0]
+
+    def test_rate_must_stay_positive(self) -> None:
+        with make_client(Recorder()) as client, pytest.raises(ValueError, match="positive"):
+            client.set_requests_per_second(0)
+
+    def test_rate_limit_responses_are_counted_even_when_a_retry_succeeds(self) -> None:
+        recorder = Recorder(httpx.Response(429), httpx.Response(503), httpx.Response(429), ok({}))
+        with make_client(recorder) as client:
+            assert client.rate_limited_count == 0
+            client.get_series("s")
+            assert client.rate_limited_count == 2

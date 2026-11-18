@@ -348,6 +348,18 @@ class Store:
         )
         return {row["market_slug"] for row in rows}
 
+    def market_slugs_with_history(self) -> set[str]:
+        """Slugs of markets whose price history was fetched after their window ended."""
+        rows = self._conn.execute(
+            "SELECT market_slug FROM markets WHERE history_fetched_at IS NOT NULL"
+        )
+        return {row["market_slug"] for row in rows}
+
+    def market_slugs_with_outcome(self) -> set[str]:
+        """Slugs of markets that have a recorded settlement outcome."""
+        rows = self._conn.execute("SELECT market_slug FROM markets WHERE outcome IS NOT NULL")
+        return {row["market_slug"] for row in rows}
+
     # -- run log ---------------------------------------------------------------
 
     def start_run(self, series_slugs: Iterable[str], *, started_at: int) -> int:

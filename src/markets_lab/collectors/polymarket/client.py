@@ -26,7 +26,12 @@ GATEWAY_HOST = "gateway.polymarket.us"
 BASE_URL = f"https://{GATEWAY_HOST}/v1"
 
 DEFAULT_REQUESTS_PER_SECOND = 4.0
-"""About a sixth of the documented limit of 25 requests per second per IP."""
+"""About a sixth of the documented limit of 25 requests per second per IP.
+
+Measured on 2026-11-18: price history accepted 5 requests per second, but the
+settlement endpoint answered 429 (Retry-After: 10) at one request every 2 seconds
+and accepted one every 3 seconds. Callers set a slower rate for settlements.
+"""
 
 DEFAULT_MAX_ATTEMPTS = 5
 MAX_BACKOFF_SECONDS = 60.0
@@ -74,6 +79,7 @@ class PolymarketClient:
         self._sleep = sleep
         self._clock = clock
         self._last_request_at: float | None = None
+        self._rate_limited_count = 0
         self._http = httpx.Client(
             transport=transport,
             timeout=timeout_seconds,
@@ -95,6 +101,22 @@ class PolymarketClient:
 
     def close(self) -> None:
         self._http.close()
+
+    @property
+    def requests_per_second(self) -> float:
+        """The highest request rate this client will send at."""
+        return 1.0 / self._min_interval
+
+    def set_requests_per_second(self, requests_per_second: float) -> None:
+        """Change the request rate, for endpoints with different limits."""
+        if requests_per_second <= 0:
+            raise ValueError("requests_per_second must be positive")
+        self._min_interval = 1.0 / requests_per_second
+
+    @property
+    def rate_limited_count(self) -> int:
+        """How many 429 responses this client has received, including retried ones."""
+        return self._rate_limited_count
 
     def get_series(self, slug: str) -> Any:
         """Raw response of the series lookup for one slug."""
@@ -179,6 +201,8 @@ class PolymarketClient:
                 last_problem = f"HTTP {response.status_code}"
                 if response.status_code not in _RETRYABLE_STATUS:
                     raise PolymarketAPIError(f"GET {url} {dict(params)}: {last_problem}")
+                if response.status_code == 429:
+                    self._rate_limited_count += 1
                 retry_after = _retry_after_seconds(response)
             if attempt < self._max_attempts:
                 backoff = float(2 ** (attempt - 1))
