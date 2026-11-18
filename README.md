@@ -13,6 +13,17 @@ with confidence intervals, and negative results are published as findings.
 
 Early scaffold. No data has been collected and there are no results yet.
 
+### Launch blockers
+
+The repository stays private and the site stays unpublished until each of these is
+resolved:
+
+- [ ] **Data terms for Experiment 1.** The Polymarket US participant agreement says
+      market data "may not be redistributed except as PMUS expressly permits". Ask
+      data@polymarket.us whether publishing aggregated statistics (win rates,
+      calibration curves, confidence intervals) is permitted, and record the answer
+      here. Raw quotes stay local and gitignored regardless of the answer.
+
 ## Experiments
 
 ### 1. Are prediction-market favorites priced right?
@@ -43,8 +54,9 @@ tests/          pytest suite
 data/           raw local databases (gitignored)
 ```
 
-A static site presenting the results will be added under `site/`. It will publish
-aggregated results only, not raw market data.
+A static site presenting the results will be added under `site/`. It will show
+aggregated results only, never raw market data, and it is not published until the
+launch blockers above are cleared.
 
 ## Development
 
