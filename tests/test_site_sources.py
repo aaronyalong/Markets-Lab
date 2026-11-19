@@ -22,7 +22,13 @@ LINK = re.compile(r"\]\(([^)#\s]+\.qmd)(?:#[^)]*)?\)")
 
 def test_expected_pages_exist() -> None:
     names = {str(p.relative_to(SITE)) for p in PAGES}
-    assert names == {"index.qmd", "method.qmd", "disclaimer.qmd", "experiments/nvidia.qmd"}
+    assert names == {
+        "index.qmd",
+        "method.qmd",
+        "disclaimer.qmd",
+        "experiments/nvidia.qmd",
+        "404.qmd",
+    }
 
 
 def test_footer_on_every_page_says_not_financial_advice() -> None:

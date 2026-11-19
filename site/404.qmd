@@ -1,0 +1,20 @@
+---
+pagetitle: "Page not found · Markets Lab"
+page-layout: custom
+toc: false
+---
+
+:::::: {.page-hero}
+::::: {.band}
+
+[Not found]{.tag}
+
+# Page [not found]{.grad}
+
+That page does not exist, or it has moved.
+
+[Back to the home page →](/index.qmd){.btn-lab .primary}
+[Open the NVIDIA experiment](/experiments/nvidia.qmd){.btn-lab}
+
+:::::
+::::::

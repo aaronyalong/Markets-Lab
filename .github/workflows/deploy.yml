@@ -1,0 +1,75 @@
+name: Deploy site
+
+# Renders the Quarto site and publishes it to Cloudflare as static files.
+# Research only, not financial advice.
+#
+# Runs on every push to main, on demand, and after each successful nightly run.
+# The last trigger is needed because the nightly job pushes with the workflow's own
+# token, and GitHub does not start push-triggered workflows for those commits.
+#
+# Nothing is published unless the site renders, the tests pass against the built
+# pages and the prediction log verifies.
+
+on:
+  push:
+    branches: [main]
+  workflow_run:
+    workflows: ["Nightly NVDA prediction"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-site
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # Always the tip of main, so a run started by the nightly job includes the
+      # log lines it has just pushed.
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - uses: quarto-dev/quarto-actions/setup@v2
+        with:
+          version: 1.11.9
+
+      # Quarto resolves includes before its pre-render hook runs, so the generated
+      # parts of the NVIDIA page must exist before the render starts.
+      - name: Write the generated parts of the NVIDIA page
+        run: uv run python -m markets_lab.analysis.nvda.site_page --site-dir site
+
+      - name: Render the site
+        run: quarto render site
+
+      # Run after the render so the check that every built page carries the
+      # disclaimer is not skipped.
+      - name: Tests, including the built pages
+        run: uv run pytest -q
+
+      - name: Verify the prediction log
+        run: |
+          if [ -f predictions/nvda.jsonl ]; then
+            uv run python -m markets_lab.analysis.nvda.prediction_log verify
+          else
+            echo "No prediction log yet."
+          fi
+
+      - name: Publish to Cloudflare
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy

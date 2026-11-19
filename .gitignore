@@ -32,6 +32,9 @@ site/.quarto/
 site/_generated/
 **/*.quarto_ipynb
 
+# Cloudflare Wrangler local state
+.wrangler/
+
 # Local assistant config
 CLAUDE.md
 .claude/

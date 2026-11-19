@@ -1,0 +1,12 @@
+// Cloudflare Worker that serves the rendered site as static files. There is no
+// Worker script: nothing here runs code, it only serves what `quarto render site`
+// wrote to site/_site/.
+{
+  "name": "markets-lab",
+  "compatibility_date": "2026-11-18",
+  "assets": {
+    "directory": "./site/_site",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page"
+  }
+}

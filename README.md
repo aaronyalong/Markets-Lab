@@ -11,11 +11,11 @@ negative results are published as findings.
 
 ## Status
 
-Work in progress. Nothing is published yet and there are no results.
+Work in progress.
 
 | Part | State |
 |---|---|
-| NVIDIA next-day direction experiment | In progress |
+| NVIDIA next-day direction experiment | Backtest done; the live prediction log starts with the first nightly run |
 | Earnings explainer (cited summaries of SEC filings) | Planned, not started |
 
 ## What it will contain
@@ -79,6 +79,29 @@ The NVIDIA page's numbers, tables and charts are written by
 `reports/nvda_backtest.json` into `site/_generated/` (gitignored). Quarto reruns it
 before every render, but the files must exist once before Quarto will start, hence
 the first command.
+
+### Deploying
+
+The site is served by a Cloudflare Worker that holds only static files
+(`wrangler.jsonc`; there is no Worker script). `.github/workflows/deploy.yml`
+renders the site and publishes it on every push to `main`, after each successful
+nightly run, and on demand from the Actions tab. It publishes nothing unless the
+tests pass against the built pages and the prediction log verifies.
+
+The workflow needs two repository secrets (Settings → Secrets and variables →
+Actions):
+
+- `CLOUDFLARE_API_TOKEN`: a Cloudflare API token created with the "Edit Cloudflare
+  Workers" permissions, limited to the one account.
+- `CLOUDFLARE_ACCOUNT_ID`: the account ID shown in the Cloudflare dashboard.
+
+To publish by hand from a machine with Quarto and Node installed:
+
+```bash
+uv run python -m markets_lab.analysis.nvda.site_page
+quarto render site
+npx wrangler deploy   # asks you to log in to Cloudflare the first time
+```
 
 ## Development
 
