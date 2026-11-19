@@ -114,10 +114,10 @@ class TestReportContents:
             totals = [row["returns_by_cost_bps"][str(c)]["total_return"] for c in COST_LEVELS_BPS]
             assert totals[0] >= totals[1] >= totals[2]
 
-    def test_comparisons_cover_every_model_against_every_baseline(
+    def test_every_predictor_is_compared_with_each_one_listed_before_it(
         self, report: dict[str, Any]
     ) -> None:
-        pairs = [(row["predictor"], row["baseline"]) for row in report["comparisons"]]
+        pairs = [(row["predictor"], row["reference"]) for row in report["comparisons"]]
         assert pairs == [
             ("persistence", "always_up"),
             ("ma_200", "always_up"),
@@ -130,7 +130,7 @@ class TestReportContents:
     def test_differences_match_the_predictor_rows(self, report: dict[str, Any]) -> None:
         predictors = report["predictors"]
         for row in report["comparisons"]:
-            ours, theirs = predictors[row["predictor"]], predictors[row["baseline"]]
+            ours, theirs = predictors[row["predictor"]], predictors[row["reference"]]
             assert row["accuracy_difference"] == pytest.approx(
                 ours["accuracy"] - theirs["accuracy"], abs=2e-6
             )
@@ -160,7 +160,25 @@ class TestReportContents:
 
     def test_registered_baselines_and_models(self) -> None:
         assert list(BASELINE_FACTORIES) == ["always_up", "persistence", "ma_200"]
-        assert list(MODEL_FACTORIES) == ["logistic"]
+        assert list(MODEL_FACTORIES) == ["logistic", "xgboost"]
+
+    def test_a_later_model_is_also_compared_with_earlier_models(self, dataset: Dataset) -> None:
+        result = run_backtest(
+            dataset,
+            models={"first": LeastSquaresLearner, "second": LeastSquaresLearner},
+            config=CONFIG,
+            bootstrap=QUICK,
+        )
+        pairs = [(row["predictor"], row["reference"]) for row in result["comparisons"]]
+        assert ("second", "first") in pairs
+        assert ("first", "second") not in pairs
+        same = next(
+            r
+            for r in result["comparisons"]
+            if r["predictor"] == "second" and r["reference"] == "first"
+        )
+        assert same["accuracy_difference"] == 0.0
+        assert same["accuracy_difference_interval"] == [0.0, 0.0]
 
     def test_probability_quality_is_reported_only_where_there_are_probabilities(
         self, report: dict[str, Any]
@@ -247,7 +265,13 @@ class TestCommandLine:
         )
         assert code == 0
         written = json.loads(out.read_text())
-        assert list(written["predictors"]) == ["always_up", "persistence", "ma_200", "logistic"]
+        assert list(written["predictors"]) == [
+            "always_up",
+            "persistence",
+            "ma_200",
+            "logistic",
+            "xgboost",
+        ]
         assert written["validation"]["initial_train_sessions"] == 1_260
         assert written["intervals"]["resamples"] == 50
         assert lines[-1] == f"\nwrote {out}"

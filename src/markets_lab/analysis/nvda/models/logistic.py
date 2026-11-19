@@ -19,10 +19,14 @@ import pandas as pd
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 
+from markets_lab.analysis.nvda.models.common import (
+    DECISION_THRESHOLD,
+    prediction_matrix,
+    training_arrays,
+)
 from markets_lab.analysis.nvda.predictors import prediction_frame
 
 REGULARISATION_C = 1.0
-DECISION_THRESHOLD = 0.5
 
 
 class LogisticRegressionModel:
@@ -36,29 +40,18 @@ class LogisticRegressionModel:
         self._columns: list[str] = []
 
     def fit(self, features: pd.DataFrame, target_up: pd.Series) -> None:
-        target = target_up.to_numpy(dtype="float64")
-        if not np.isin(target, (0.0, 1.0)).all():
-            raise ValueError("target_up must be 0 or 1 with no missing values")
-        if len(np.unique(target)) < 2:
-            raise ValueError("training data has only one outcome; cannot fit a classifier")
-        matrix = features.to_numpy(dtype="float64")
-        if not np.isfinite(matrix).all():
-            raise ValueError("training features have missing or infinite values")
+        matrix, target = training_arrays(features, target_up)
         scaler = StandardScaler().fit(matrix)
         model = LogisticRegression(C=REGULARISATION_C, max_iter=1_000)
-        model.fit(scaler.transform(matrix), target.astype("int64"))
+        model.fit(scaler.transform(matrix), target)
         self._scaler, self._model, self._columns = scaler, model, list(features.columns)
 
     def predict(self, features: pd.DataFrame) -> pd.DataFrame:
         if self._scaler is None or self._model is None:
             raise RuntimeError("fit must be called before predict")
-        if list(features.columns) != self._columns:
-            raise ValueError("features do not have the columns the model was fitted on")
+        matrix = prediction_matrix(features, self._columns)
         if len(features) == 0:
             return prediction_frame(features.index, np.zeros(0, dtype=bool), np.zeros(0))
-        matrix = features.to_numpy(dtype="float64")
-        if not np.isfinite(matrix).all():
-            raise ValueError("features have missing or infinite values")
         up_column = int(np.flatnonzero(self._model.classes_ == 1)[0])
         probability = self._model.predict_proba(self._scaler.transform(matrix))[:, up_column]
         return prediction_frame(features.index, probability > DECISION_THRESHOLD, probability)

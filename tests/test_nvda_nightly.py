@@ -10,7 +10,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from markets_lab.analysis.nvda.backtest import BASELINE_FACTORIES, PredictorFactory
+from markets_lab.analysis.nvda.backtest import (
+    BASELINE_FACTORIES,
+    MODEL_FACTORIES,
+    PredictorFactory,
+)
 from markets_lab.analysis.nvda.features import build_dataset
 from markets_lab.analysis.nvda.nightly import (
     NightlyError,
@@ -363,7 +367,8 @@ class TestDryRunAndCommandLine:
 
 class TestDefaults:
     def test_default_predictors_are_the_baselines_and_measured_models(self) -> None:
-        assert list(default_factories()) == ["always_up", "persistence", "ma_200", "logistic"]
+        assert list(default_factories()) == [*BASELINE_FACTORIES, *MODEL_FACTORIES]
+        assert list(default_factories())[:4] == ["always_up", "persistence", "ma_200", "logistic"]
 
     def test_the_real_registry_runs_end_to_end(self, log: Path) -> None:
         result = run_nightly(
@@ -372,15 +377,13 @@ class TestDefaults:
             downloader=lambda _symbol: as_yahoo(history()),
             min_rows=100,
         )
-        assert [p.model for p in result.predictions] == [
-            "always_up",
-            "persistence",
-            "ma_200",
-            "logistic",
-        ]
-        logistic = result.predictions[-1]
-        assert logistic.probability_up is not None
-        assert 0 < logistic.probability_up < 1
+        assert [p.model for p in result.predictions] == list(default_factories())
+        for prediction in result.predictions:
+            if prediction.model in MODEL_FACTORIES:
+                assert prediction.probability_up is not None
+                assert 0 < prediction.probability_up < 1
+            else:
+                assert prediction.probability_up is None
 
 
 WORKFLOW = Path(__file__).resolve().parents[1] / ".github" / "workflows" / "nightly.yml"

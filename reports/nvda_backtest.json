@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-19T02:17:09Z",
+  "generated_at": "2026-11-19T02:44:45Z",
   "symbol": "NVDA",
   "data": {
     "sessions_with_features": 6800,
@@ -212,12 +212,57 @@
           "sharpe_ratio": 0.665502
         }
       }
+    },
+    "xgboost": {
+      "kind": "model",
+      "sessions": 5539,
+      "hits": 2806,
+      "accuracy": 0.50659,
+      "accuracy_interval": [
+        0.493423,
+        0.519747
+      ],
+      "share_called_up": 0.590179,
+      "brier_score": 0.255118,
+      "trades": 1809,
+      "returns_by_cost_bps": {
+        "0": {
+          "total_return": 204.483277,
+          "annualised_return": 0.274152,
+          "annualised_return_interval": [
+            0.109623,
+            0.45817
+          ],
+          "annualised_volatility": 0.349197,
+          "sharpe_ratio": 0.869572
+        },
+        "5": {
+          "total_return": 82.149355,
+          "annualised_return": 0.222771,
+          "annualised_return_interval": [
+            0.065434,
+            0.400562
+          ],
+          "annualised_volatility": 0.349152,
+          "sharpe_ratio": 0.751673
+        },
+        "10": {
+          "total_return": 32.63138,
+          "annualised_return": 0.173438,
+          "annualised_return_interval": [
+            0.023523,
+            0.344463
+          ],
+          "annualised_volatility": 0.349148,
+          "sharpe_ratio": 0.633673
+        }
+      }
     }
   },
   "comparisons": [
     {
       "predictor": "persistence",
-      "baseline": "always_up",
+      "reference": "always_up",
       "accuracy_difference": -0.037371,
       "accuracy_difference_interval": [
         -0.053624,
@@ -232,7 +277,7 @@
     },
     {
       "predictor": "ma_200",
-      "baseline": "always_up",
+      "reference": "always_up",
       "accuracy_difference": -0.001444,
       "accuracy_difference_interval": [
         -0.013545,
@@ -247,7 +292,7 @@
     },
     {
       "predictor": "ma_200",
-      "baseline": "persistence",
+      "reference": "persistence",
       "accuracy_difference": 0.035927,
       "accuracy_difference_interval": [
         0.02022,
@@ -262,7 +307,7 @@
     },
     {
       "predictor": "logistic",
-      "baseline": "always_up",
+      "reference": "always_up",
       "accuracy_difference": -0.016429,
       "accuracy_difference_interval": [
         -0.030872,
@@ -277,7 +322,7 @@
     },
     {
       "predictor": "logistic",
-      "baseline": "persistence",
+      "reference": "persistence",
       "accuracy_difference": 0.020942,
       "accuracy_difference_interval": [
         0.003787,
@@ -292,7 +337,7 @@
     },
     {
       "predictor": "logistic",
-      "baseline": "ma_200",
+      "reference": "ma_200",
       "accuracy_difference": -0.014985,
       "accuracy_difference_interval": [
         -0.031057,
@@ -302,6 +347,66 @@
       "annualised_return_difference_interval": [
         -0.322541,
         0.024239
+      ],
+      "cost_bps": 5
+    },
+    {
+      "predictor": "xgboost",
+      "reference": "always_up",
+      "accuracy_difference": -0.017693,
+      "accuracy_difference_interval": [
+        -0.034663,
+        -0.000898
+      ],
+      "annualised_return_difference": -0.155247,
+      "annualised_return_difference_interval": [
+        -0.350256,
+        0.012067
+      ],
+      "cost_bps": 5
+    },
+    {
+      "predictor": "xgboost",
+      "reference": "persistence",
+      "accuracy_difference": 0.019679,
+      "accuracy_difference_interval": [
+        -0.000361,
+        0.037917
+      ],
+      "annualised_return_difference": 0.195463,
+      "annualised_return_difference_interval": [
+        0.039744,
+        0.359867
+      ],
+      "cost_bps": 5
+    },
+    {
+      "predictor": "xgboost",
+      "reference": "ma_200",
+      "accuracy_difference": -0.016248,
+      "accuracy_difference_interval": [
+        -0.033038,
+        0.000722
+      ],
+      "annualised_return_difference": -0.174417,
+      "annualised_return_difference_interval": [
+        -0.368165,
+        0.003303
+      ],
+      "cost_bps": 5
+    },
+    {
+      "predictor": "xgboost",
+      "reference": "logistic",
+      "accuracy_difference": -0.001264,
+      "accuracy_difference_interval": [
+        -0.016248,
+        0.014624
+      ],
+      "annualised_return_difference": -0.026163,
+      "annualised_return_difference_interval": [
+        -0.168333,
+        0.117269
       ],
       "cost_bps": 5
     }

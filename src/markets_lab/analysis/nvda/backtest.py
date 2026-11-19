@@ -41,6 +41,7 @@ from markets_lab.analysis.nvda.metrics import (
     wilson_interval,
 )
 from markets_lab.analysis.nvda.models.logistic import LogisticRegressionModel
+from markets_lab.analysis.nvda.models.xgb import XGBoostModel
 from markets_lab.analysis.nvda.predictors import PREDICTED_UP, PROBABILITY_UP, Predictor
 from markets_lab.analysis.nvda.validation import WalkForwardConfig, make_folds, walk_forward
 from markets_lab.collectors.nvda_prices import (
@@ -68,6 +69,7 @@ BASELINE_FACTORIES: dict[str, PredictorFactory] = {
 
 MODEL_FACTORIES: dict[str, PredictorFactory] = {
     "logistic": LogisticRegressionModel,
+    "xgboost": XGBoostModel,
 }
 """Models are added here one at a time, each after the previous one is measured."""
 
@@ -141,17 +143,14 @@ def run_backtest(
             },
         }
 
+    # Every predictor is compared with each one listed before it: baselines with
+    # earlier baselines, models with every baseline and every earlier model.
     comparisons: list[dict[str, Any]] = []
     names = list(calls)
-    for name in names:
-        for baseline in baselines:
-            if name == baseline or (
-                name in baselines and names.index(name) < names.index(baseline)
-            ):
-                continue
-            comparisons.append(
-                _compare(name, baseline, hit, net, n, bootstrap),
-            )
+    for position, name in enumerate(names):
+        comparisons += [
+            _compare(name, reference, hit, net, n, bootstrap) for reference in names[:position]
+        ]
 
     return {
         "generated_at": (generated_at or datetime.now(tz=UTC)).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -209,14 +208,14 @@ def _brier(probability: np.ndarray, target: np.ndarray) -> float | None:
 
 def _compare(
     name: str,
-    baseline: str,
+    reference: str,
     hit: Mapping[str, np.ndarray],
     net: Mapping[str, Mapping[int, np.ndarray]],
     n: int,
     bootstrap: BootstrapConfig,
 ) -> dict[str, Any]:
-    ours, theirs = hit[name], hit[baseline]
-    our_net, their_net = net[name][PRIMARY_COST_BPS], net[baseline][PRIMARY_COST_BPS]
+    ours, theirs = hit[name], hit[reference]
+    our_net, their_net = net[name][PRIMARY_COST_BPS], net[reference][PRIMARY_COST_BPS]
 
     def accuracy_gap(rows: np.ndarray) -> float:
         return float(ours[rows].mean() - theirs[rows].mean())
@@ -227,7 +226,7 @@ def _compare(
     everything = np.arange(n)
     return {
         "predictor": name,
-        "baseline": baseline,
+        "reference": reference,
         "accuracy_difference": _number(accuracy_gap(everything)),
         "accuracy_difference_interval": _pair(bootstrap_interval(n, accuracy_gap, bootstrap)),
         "annualised_return_difference": _number(return_gap(everything)),
@@ -268,12 +267,12 @@ def format_report(report: Mapping[str, Any]) -> str:
             f"probability quality (Brier score, lower is better; base rate {reference:.4f}):",
         ]
         lines += [f"  {name}: {score:.4f}" for name, score in scored.items()]
-    lines += ["", f"differences (returns at {cost} bps per trade), predictor minus baseline:"]
+    lines += ["", f"differences (returns at {cost} bps per trade), predictor minus reference:"]
     for row in report["comparisons"]:
         accuracy_range = _range(row["accuracy_difference_interval"], points=True)
         return_range = _range(row["annualised_return_difference_interval"], points=True)
         lines.append(
-            f"  {row['predictor']} vs {row['baseline']}: accuracy "
+            f"  {row['predictor']} vs {row['reference']}: accuracy "
             f"{_points(row['accuracy_difference'])} {accuracy_range}"
             f", annualised return {_points(row['annualised_return_difference'])} {return_range}"
         )
