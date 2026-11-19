@@ -119,6 +119,35 @@ def test_generated_fragments_are_rebuilt_before_each_render_and_not_committed() 
     assert "site/_generated/" in ignored
 
 
+SITE_URL = "https://markets.aaronyalong.com"
+
+
+def test_the_site_url_is_set_and_public_addresses_are_cleaned_after_each_render() -> None:
+    config = CONFIG.read_text()
+    assert f'site-url: "{SITE_URL}"' in config
+    assert "canonical-url: true" in config
+    assert "post-render: uv run python -m markets_lab.site_urls --built-dir _site" in config
+
+
+@pytest.mark.skipif(not BUILT.is_dir(), reason="site has not been rendered")
+def test_built_canonical_links_and_sitemap_use_the_addresses_the_host_serves() -> None:
+    canonical = re.compile(r'<link rel="canonical" href="([^"]+)"')
+    addresses = []
+    for page in sorted(BUILT.rglob("*.html")):
+        found = canonical.findall(page.read_text())
+        assert len(found) == 1, f"{page.name} needs exactly one canonical link"
+        addresses.extend(found)
+    sitemap = (BUILT / "sitemap.xml").read_text()
+    locations = re.findall(r"<loc>([^<]+)</loc>", sitemap)
+    assert f"{SITE_URL}/" in locations
+    assert f"{SITE_URL}/experiments/nvidia" in locations
+    assert not any("404" in location for location in locations)
+    for address in addresses + locations:
+        assert address.startswith(f"{SITE_URL}/")
+        assert not address.endswith(".html"), f"{address} would be redirected by the host"
+    assert f"Sitemap: {SITE_URL}/sitemap.xml" in (BUILT / "robots.txt").read_text()
+
+
 @pytest.mark.skipif(not BUILT.is_dir(), reason="site has not been rendered")
 def test_every_built_page_carries_the_disclaimer() -> None:
     built_pages = sorted(BUILT.rglob("*.html"))

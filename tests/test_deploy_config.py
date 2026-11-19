@@ -36,7 +36,25 @@ class TestWranglerConfig:
         assert assets["directory"] == "./site/_site"
         assert assets["not_found_handling"] == "404-page"
         # No Worker script and no bindings: the deployment only serves files.
-        assert set(config) == {"name", "compatibility_date", "assets"}
+        assert set(config) == {"name", "compatibility_date", "routes", "assets"}
+
+    def test_it_is_served_on_one_custom_domain(self) -> None:
+        config = wrangler_config()
+        assert config["routes"] == [{"pattern": "markets.aaronyalong.com", "custom_domain": True}]
+        # With a route set, the workers.dev address is off unless turned back on.
+        assert "workers_dev" not in config
+
+    def test_the_route_matches_the_address_quarto_builds_for(self) -> None:
+        routes = wrangler_config()["routes"]
+        assert isinstance(routes, list)
+        quarto = (ROOT / "site" / "_quarto.yml").read_text()
+        assert f'site-url: "https://{routes[0]["pattern"]}"' in quarto
+
+    def test_clean_addresses_are_what_the_sitemap_is_rewritten_for(self) -> None:
+        # markets_lab.site_urls strips ".html" because this setting redirects it.
+        assets = wrangler_config()["assets"]
+        assert isinstance(assets, dict)
+        assert assets["html_handling"] == "auto-trailing-slash"
 
     def test_the_site_has_a_page_for_missing_addresses(self) -> None:
         assert (ROOT / "site" / "404.qmd").is_file()

@@ -4,9 +4,15 @@ project:
   # Writes the data-driven parts of the NVIDIA page from the prediction log and the
   # backtest report before every render.
   pre-render: uv run python -m markets_lab.analysis.nvda.site_page --site-dir .
+  # Rewrites canonical links and the sitemap to the clean addresses the host
+  # serves (it redirects ".html" to them).
+  post-render: uv run python -m markets_lab.site_urls --built-dir _site
 
 website:
   title: "Markets Lab"
+  # The public address. Quarto uses it for the sitemap and, with canonical-url
+  # below, for each page's canonical link. It must match the route in wrangler.jsonc.
+  site-url: "https://markets.aaronyalong.com"
   description: "Hobby research on markets: every result has a baseline, an honest uncertainty, and no advice."
   navbar:
     left:
@@ -28,6 +34,7 @@ format:
     theme: [darkly, theme.scss]
     include-in-header: _includes/fonts.html
     toc: false
+    canonical-url: true
     smooth-scroll: true
     link-external-newwindow: true
     link-external-icon: false

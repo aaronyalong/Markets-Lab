@@ -4,6 +4,15 @@
 {
   "name": "markets-lab",
   "compatibility_date": "2026-11-18",
+  // The public address. Cloudflare creates the DNS record and certificate for it.
+  // It must match `site-url` in site/_quarto.yml. With a route set, the
+  // workers.dev address is off, so the site has one address only.
+  "routes": [
+    {
+      "pattern": "markets.aaronyalong.com",
+      "custom_domain": true
+    }
+  ],
   "assets": {
     "directory": "./site/_site",
     "html_handling": "auto-trailing-slash",

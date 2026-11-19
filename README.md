@@ -82,17 +82,30 @@ the first command.
 
 ### Deploying
 
-The site is served by a Cloudflare Worker that holds only static files
-(`wrangler.jsonc`; there is no Worker script). `.github/workflows/deploy.yml`
-renders the site and publishes it on every push to `main`, after each successful
-nightly run, and on demand from the Actions tab. It publishes nothing unless the
-tests pass against the built pages and the prediction log verifies.
+The site is published at <https://markets.aaronyalong.com>, served by a Cloudflare
+Worker that holds only static files (`wrangler.jsonc`; there is no Worker script).
+`.github/workflows/deploy.yml` renders the site and publishes it on every push to
+`main`, after each successful nightly run, and on demand from the Actions tab. It
+publishes nothing unless the tests pass against the built pages and the prediction
+log verifies.
+
+The address is a custom domain on the Worker (`routes` in `wrangler.jsonc`).
+Cloudflare creates the DNS record and certificate on the first deploy; that fails
+if a DNS record for `markets` already exists in the zone. The same address is set
+as `site-url` in `site/_quarto.yml`, and a test fails if the two differ. With a
+route set, the Worker has no `workers.dev` address.
+
+Pages are served at clean addresses (`/method`, `/experiments/nvidia`); the
+`.html` forms redirect to them. Quarto writes canonical links and the sitemap with
+`.html`, so `markets_lab.site_urls` rewrites both after every render (Quarto's
+post-render hook).
 
 The workflow needs two repository secrets (Settings → Secrets and variables →
 Actions):
 
 - `CLOUDFLARE_API_TOKEN`: a Cloudflare API token created with the "Edit Cloudflare
-  Workers" permissions, limited to the one account.
+  Workers" permissions, limited to the one account and including the
+  `aaronyalong.com` zone (needed to attach the custom domain).
 - `CLOUDFLARE_ACCOUNT_ID`: the account ID shown in the Cloudflare dashboard.
 
 To publish by hand from a machine with Quarto and Node installed:
