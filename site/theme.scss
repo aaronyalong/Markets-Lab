@@ -1,16 +1,26 @@
 /*-- scss:defaults --*/
 
-// Palette, matched to the portfolio site.
-$lab-bg: #17171b;
-$lab-panel: #1f1f25;
-$lab-text: #ececf1;
-$lab-accent: #9aa8ff;
-$lab-muted: #a3a3b2;
-$lab-border: #2c2c35;
+// Palette: a market data screen. Near-black, greens and one red.
+// tests/test_site_sources.py checks every text colour against both backgrounds
+// for a contrast of at least 4.5:1, so change these together with that test.
+$lab-bg: #06080b;
+$lab-panel: #0e1217;
+$lab-text: #e9edf3;
+$lab-muted: #94a0b4;
+$lab-border: #1f2630;
 
-// Two supporting tints, used only in gradients and glows.
-$lab-violet: #c9b6ff;
-$lab-cyan: #8fe3ff;
+// Green is the site's accent and, with red, the colour of direction. Direction is
+// never shown by colour alone: it always carries an arrow and the word.
+$lab-green: #1fd68f;
+$lab-red: #ff5d6c;
+$lab-accent: $lab-green;
+
+// Two supporting tints, used in gradients and glows.
+$lab-lime: #9be564;
+$lab-mint: #a6f4d0;
+
+// Text on top of the accent gradient.
+$lab-ink: #04130d;
 
 $body-bg: $lab-bg;
 $body-color: $lab-text;
@@ -19,8 +29,8 @@ $link-color: $lab-accent;
 $border-color: $lab-border;
 $card-bg: $lab-panel;
 
-$font-family-sans-serif: "Ubuntu", system-ui, -apple-system, "Segoe UI", sans-serif;
-$font-family-monospace: "Ubuntu Mono", ui-monospace, "SFMono-Regular", monospace;
+$font-family-sans-serif: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+$font-family-monospace: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
 $headings-font-weight: 700;
 
 $navbar-bg: $lab-bg;
@@ -32,7 +42,7 @@ $footer-fg: $lab-muted;
 /*-- scss:rules --*/
 
 $wide: 72rem;
-$accent-gradient: linear-gradient(100deg, $lab-accent 0%, $lab-violet 50%, $lab-cyan 100%);
+$accent-gradient: linear-gradient(100deg, $lab-accent 0%, $lab-lime 50%, $lab-mint 100%);
 
 body {
   line-height: 1.65;
@@ -101,6 +111,11 @@ a:hover {
     flex: 1 1 100%;
     max-width: none;
   }
+
+  .byline {
+    display: block;
+    margin-top: 0.35rem;
+  }
 }
 
 // ------------------------------------------------------------------ building blocks
@@ -149,11 +164,11 @@ a:hover {
   &.primary {
     background: $accent-gradient;
     border-color: transparent;
-    color: #14141a;
+    color: $lab-ink;
     box-shadow: 0 8px 30px rgba($lab-accent, 0.35);
 
     &:hover {
-      color: #14141a;
+      color: $lab-ink;
       box-shadow: 0 12px 38px rgba($lab-accent, 0.5);
     }
   }
@@ -243,8 +258,8 @@ a:hover {
     inset: -30% -10% -10% -10%;
     background:
       radial-gradient(40rem 28rem at 14% 18%, rgba($lab-accent, 0.34), transparent 62%),
-      radial-gradient(34rem 24rem at 86% 26%, rgba($lab-violet, 0.26), transparent 60%),
-      radial-gradient(36rem 22rem at 60% 96%, rgba($lab-cyan, 0.14), transparent 62%);
+      radial-gradient(34rem 24rem at 86% 26%, rgba($lab-lime, 0.26), transparent 60%),
+      radial-gradient(36rem 22rem at 60% 96%, rgba($lab-mint, 0.14), transparent 62%);
     animation: drift 22s ease-in-out infinite alternate;
     pointer-events: none;
   }
@@ -306,7 +321,7 @@ a:hover {
     text-align: right;
     font-size: 0.75rem;
     letter-spacing: 0.04em;
-    color: rgba($lab-muted, 0.75);
+    color: $lab-muted;
   }
 }
 
@@ -368,7 +383,7 @@ a:hover {
   }
 
   .cone-label {
-    fill: rgba($lab-muted, 0.85);
+    fill: $lab-muted;
     font-size: 11px;
     font-weight: 500;
     letter-spacing: 0.16em;
@@ -502,7 +517,7 @@ a:hover {
   box-shadow: 0 18px 50px rgba($lab-accent, 0.16);
 
   .card-icon {
-    color: #14141a;
+    color: $lab-ink;
     background: $accent-gradient;
     border-color: transparent;
     box-shadow: 0 8px 24px rgba($lab-accent, 0.4);
@@ -529,11 +544,6 @@ a:hover {
 .lab-card.coming-soon {
   background: rgba($lab-panel, 0.55);
   border-style: dashed;
-
-  h3,
-  p {
-    opacity: 0.75;
-  }
 }
 
 .tag {
@@ -576,7 +586,7 @@ a:hover {
   padding-bottom: 3rem;
   background:
     radial-gradient(36rem 22rem at 12% 0%, rgba($lab-accent, 0.22), transparent 62%),
-    radial-gradient(30rem 20rem at 88% 10%, rgba($lab-violet, 0.16), transparent 60%);
+    radial-gradient(30rem 20rem at 88% 10%, rgba($lab-lime, 0.16), transparent 60%);
 
   h1 {
     font-size: clamp(2.6rem, 6vw, 4.6rem);
@@ -639,8 +649,10 @@ a:hover {
   line-height: 32px;
   text-align: center;
 
+  // TradingView's own stylesheet sets a blue that is too dim on this background.
+  a,
   .blue-text {
-    color: $lab-muted;
+    color: $lab-muted !important;
   }
 }
 
@@ -687,8 +699,8 @@ a:hover {
   }
 }
 
-// Direction is shown in the site's own colours on purpose: not green and red,
-// which would read as a trading signal.
+// Direction uses the market's green and red, and never colour alone: the markup
+// always carries an arrow and the word "Up" or "Down" as well.
 .call {
   font-size: 1.9rem;
   font-weight: 700;
@@ -696,11 +708,11 @@ a:hover {
   letter-spacing: -0.01em;
 
   &.up {
-    color: $lab-cyan;
+    color: $lab-green;
   }
 
   &.down {
-    color: $lab-violet;
+    color: $lab-red;
   }
 }
 
@@ -817,6 +829,97 @@ a:hover {
     display: block;
     overflow-x: auto;
   }
+}
+
+// -------------------------------------------------------------- market data look
+
+// Numbers and labels are set in the monospace face, like a quote screen.
+.eyebrow,
+.tag,
+.big-number,
+.call-result,
+.cone-label,
+.art-note,
+.status-strip,
+.lab-table th,
+.lab-table td:not(:first-child) {
+  font-family: $font-family-monospace;
+}
+
+.big-number,
+.status-strip,
+.lab-table td {
+  font-variant-numeric: tabular-nums;
+}
+
+// Live quotes from TradingView, directly under the navigation bar. The height is
+// reserved so the page does not jump when the widget arrives.
+.ticker-band {
+  background: #000;
+  border-bottom: 1px solid $lab-border;
+  min-height: 46px;
+
+  .ticker-credit {
+    margin: 0;
+    padding: 0.15rem 1rem 0.3rem;
+    font-size: 0.72rem;
+    text-align: right;
+
+    a {
+      color: $lab-muted;
+    }
+  }
+}
+
+// The experiment's own status line: what the models called, and how they are doing.
+.status-band {
+  border-bottom: 1px solid $lab-border;
+  background: $lab-panel;
+}
+
+.status-strip {
+  max-width: $wide;
+  margin: 0 auto;
+  padding: 0.7rem 1.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 1.6rem;
+  font-size: 0.84rem;
+  color: $lab-text;
+
+  .status-label {
+    padding: 0.15rem 0.6rem;
+    border: 1px solid rgba($lab-green, 0.6);
+    border-radius: 999px;
+    color: $lab-green;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-size: 0.72rem;
+  }
+
+  .status-key {
+    color: $lab-muted;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-size: 0.74rem;
+    margin-right: 0.45rem;
+  }
+
+  .up {
+    color: $lab-green;
+    font-weight: 700;
+  }
+
+  .down {
+    color: $lab-red;
+    font-weight: 700;
+  }
+}
+
+.byline-home {
+  font-size: 0.95rem !important;
+  margin: 1.5rem 0 0 !important;
 }
 
 // ------------------------------------------------------------------ inner pages

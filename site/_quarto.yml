@@ -27,12 +27,13 @@ website:
       - href: disclaimer.qmd
         text: Disclaimer
   page-footer:
-    center: "Research and education only. **Not financial advice.** No buy or sell signals. [Read the disclaimer](/disclaimer.qmd)."
+    center: "Research and education only. **Not financial advice.** No buy or sell signals. [Read the disclaimer](/disclaimer.qmd). [Built by [Aaron Yalong](https://aaronyalong.com).]{.byline}"
 
 format:
   html:
     theme: [darkly, theme.scss]
     include-in-header: _includes/fonts.html
+    include-after-body: _includes/countup.html
     toc: false
     canonical-url: true
     smooth-scroll: true

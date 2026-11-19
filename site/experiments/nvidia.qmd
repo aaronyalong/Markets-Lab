@@ -4,6 +4,8 @@ page-layout: custom
 toc: false
 ---
 
+{{< include /_includes/ticker.md >}}
+
 :::::: {.page-hero}
 ::::: {.band}
 
@@ -22,6 +24,8 @@ be followed.
 
 :::::
 ::::::
+
+{{< include /_generated/status.md >}}
 
 ::::: {.band}
 
@@ -44,7 +48,7 @@ be followed.
     "theme": "dark",
     "style": "1",
     "locale": "en",
-    "backgroundColor": "#1f1f25",
+    "backgroundColor": "#0e1217",
     "gridColor": "rgba(255, 255, 255, 0.06)",
     "allow_symbol_change": false,
     "hide_side_toolbar": true,

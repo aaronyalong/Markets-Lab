@@ -29,6 +29,7 @@ from markets_lab.analysis.nvda.site_page import (
     cumulative_scores,
     findings,
     main,
+    status_fragment,
     tomorrow_fragment,
     track_record,
     track_record_fragment,
@@ -109,10 +110,58 @@ class TestTomorrow:
         assert "▼ Down" in text
         assert "Model's probability of up: 47%" in text
 
-    def test_direction_is_not_coloured_like_a_trading_signal(self) -> None:
-        fragment = tomorrow_fragment(log_records())
-        assert not re.search(r"\b(green|red|buy|sell)\b", fragment.lower())
-        assert 'class="call up"' in fragment
+    def test_direction_never_relies_on_colour_alone(self) -> None:
+        # Up and down are coloured green and red by the theme, so every call must
+        # also carry an arrow and the word.
+        fragment = tomorrow_fragment(log_records()[:2])
+        assert 'class="call up">▲ Up<' in fragment
+        assert 'class="call down">▼ Down<' in fragment
+        calls = re.findall(r'class="call (?:up|down)">([^<]*)<', fragment)
+        assert calls and all(re.fullmatch(r"[▲▼] (Up|Down)", text) for text in calls)
+
+    def test_the_calls_use_no_wording_that_reads_as_a_signal(self) -> None:
+        text = text_of(tomorrow_fragment(log_records())).lower()
+        assert not re.search(r"\b(buy|sell|signal|recommend\w*)\b", text)
+
+
+class TestStatusStrip:
+    def test_before_the_log_starts(self) -> None:
+        text = text_of(status_fragment([]))
+        assert "Experiment · not advice" in text
+        assert "start after the first nightly run" in text
+
+    def test_shows_each_models_latest_call_with_arrow_word_and_probability(self) -> None:
+        fragment = status_fragment(log_records())
+        text = text_of(fragment)
+        assert "Model calls after the close of Mon 18 Mar 2030" in text
+        assert re.search(r"Logistic regression\s+▲ Up\s+53%", text)
+        assert '<span class="up">▲ Up</span>' in fragment
+
+    def test_a_down_call_carries_the_arrow_and_the_word(self) -> None:
+        fragment = status_fragment(log_records()[:2])
+        assert '<span class="down">▼ Down</span>' in fragment
+        assert re.search(r"Logistic regression\s+▼ Down\s+47%", text_of(fragment))
+
+    def test_baselines_are_left_out(self) -> None:
+        assert "Always up" not in text_of(status_fragment(log_records()))
+
+    def test_it_reports_the_live_record_once_calls_are_scored(self) -> None:
+        text = text_of(status_fragment(log_records()))
+        assert re.search(r"Logistic regression\s+▲ Up\s+53% · 1 of 2 right", text)
+        assert re.search(r"Sessions scored\s+2", text)
+
+    def test_it_is_always_labelled_an_experiment_and_never_reads_as_a_signal(self) -> None:
+        for records in (
+            [],
+            log_records()[:2],
+            log_records(),
+            [*log_records(), went(TUE, MON, True)],
+        ):
+            fragment = status_fragment(records)
+            assert 'aria-label="Experiment status"' in fragment
+            text = text_of(fragment).lower()
+            assert "experiment · not advice" in text
+            assert not re.search(r"\b(buy|sell|signal|recommend\w*|bullish|bearish)\b", text)
 
 
 class TestTrackRecord:
@@ -265,7 +314,13 @@ class TestBacktestFragment:
 class TestWhatIsPublished:
     def test_fragments_are_raw_html_blocks(self, report: dict[str, Any]) -> None:
         fragments = build_fragments(report, log_records())
-        assert set(fragments) == {"plotly.md", "tomorrow.md", "track_record.md", "backtest.md"}
+        assert set(fragments) == {
+            "plotly.md",
+            "status.md",
+            "tomorrow.md",
+            "track_record.md",
+            "backtest.md",
+        }
         for content in fragments.values():
             assert content.startswith("```{=html}\n")
             assert content.endswith("\n```\n")
@@ -318,6 +373,7 @@ class TestCommandLine:
         assert written == [
             "backtest.md",
             "plotly.md",
+            "status.md",
             "tomorrow.md",
             "track_record.md",
             "updated.md",

@@ -1,0 +1,69 @@
+<script>
+  // Headline numbers count up when they scroll into view.
+  //
+  // The final value is already in the HTML, so the page reads correctly without
+  // JavaScript, and nothing moves for visitors who ask for reduced motion.
+  (function () {
+    if (!("IntersectionObserver" in window)) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+    var number = /\d[\d,]*(\.\d+)?/;
+    var duration = 900;
+
+    function countUp(element) {
+      var finalText = element.textContent;
+      var match = finalText.match(number);
+      if (!match) return;
+      var target = parseFloat(match[0].replace(/,/g, ""));
+      if (!(target > 0)) return;
+      var decimals = match[1] ? match[1].length - 1 : 0;
+      var grouped = match[0].indexOf(",") !== -1;
+      var started = null;
+      var finished = false;
+
+      function finish() {
+        finished = true;
+        element.textContent = finalText;
+      }
+      // Whatever happens to the animation (a background tab, a paused frame
+      // clock), the true value is restored. A stalled count must never be left
+      // on the page looking like a result.
+      setTimeout(finish, duration + 250);
+
+      function frame(now) {
+        if (finished) return;
+        if (started === null) started = now;
+        var progress = Math.min((now - started) / duration, 1);
+        if (progress >= 1) {
+          finish();
+          return;
+        }
+        var eased = 1 - Math.pow(1 - progress, 3);
+        var shown = (target * eased).toFixed(decimals);
+        if (grouped) {
+          shown = Number(shown).toLocaleString("en-US", {
+            minimumFractionDigits: decimals,
+            maximumFractionDigits: decimals
+          });
+        }
+        element.textContent = finalText.replace(match[0], shown);
+        requestAnimationFrame(frame);
+      }
+      requestAnimationFrame(frame);
+    }
+
+    var watcher = new IntersectionObserver(
+      function (entries) {
+        entries.forEach(function (entry) {
+          if (!entry.isIntersecting) return;
+          watcher.unobserve(entry.target);
+          countUp(entry.target);
+        });
+      },
+      { threshold: 0.6 }
+    );
+    document.querySelectorAll(".big-number").forEach(function (element) {
+      watcher.observe(element);
+    });
+  })();
+</script>

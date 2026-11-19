@@ -4,6 +4,8 @@ page-layout: custom
 toc: false
 ---
 
+{{< include /_includes/ticker.md >}}
+
 :::::: {.hero-wrap}
 ::::: {.hero-inner}
 :::: {.hero-copy}
@@ -18,6 +20,8 @@ answer, including when the answer is "it didn't work".
 [Open the NVIDIA experiment →](experiments/nvidia.qmd){.btn-lab .primary}
 [How it works](method.qmd){.btn-lab}
 
+[A project by [Aaron Yalong](https://aaronyalong.com).]{.muted .byline-home}
+
 ::::
 
 :::: {.hero-art}
@@ -26,17 +30,17 @@ answer, including when the answer is "it didn't work".
 <svg class="cone" viewBox="0 0 540 380" role="img" aria-label="Illustration: a line of past values reaching today, then widening into a cone of uncertainty.">
   <defs>
     <linearGradient id="lineGrad" x1="0" x2="1" y1="0" y2="0">
-      <stop offset="0" stop-color="#9aa8ff" stop-opacity="0.55"/>
-      <stop offset="0.6" stop-color="#c9b6ff"/>
+      <stop offset="0" stop-color="#1fd68f" stop-opacity="0.55"/>
+      <stop offset="0.6" stop-color="#9be564"/>
       <stop offset="1" stop-color="#ffffff"/>
     </linearGradient>
     <linearGradient id="areaGrad" x1="0" x2="0" y1="0" y2="1">
-      <stop offset="0" stop-color="#9aa8ff" stop-opacity="0.28"/>
-      <stop offset="1" stop-color="#9aa8ff" stop-opacity="0"/>
+      <stop offset="0" stop-color="#1fd68f" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#1fd68f" stop-opacity="0"/>
     </linearGradient>
     <linearGradient id="coneGrad" x1="0" x2="1" y1="0" y2="0">
-      <stop offset="0" stop-color="#c9b6ff" stop-opacity="0.85"/>
-      <stop offset="1" stop-color="#8fe3ff" stop-opacity="0.10"/>
+      <stop offset="0" stop-color="#9be564" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#a6f4d0" stop-opacity="0.10"/>
     </linearGradient>
   </defs>
 
@@ -73,6 +77,8 @@ answer, including when the answer is "it didn't work".
 ::::
 :::::
 ::::::
+
+{{< include /_generated/status.md >}}
 
 ::::: {.band .tight}
 ::: {.notice .center}

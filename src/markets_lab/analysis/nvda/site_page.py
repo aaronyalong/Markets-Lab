@@ -62,11 +62,13 @@ DESCRIPTIONS = {
 }
 BASELINE_NAMES = frozenset(b.name for b in default_baselines())
 
-# Site palette (see site/theme.scss).
-TEXT, MUTED, BORDER = "#ececf1", "#a3a3b2", "#2c2c35"
-ACCENT, VIOLET, CYAN = "#9aa8ff", "#c9b6ff", "#8fe3ff"
-MODEL_COLOURS = (ACCENT, CYAN, VIOLET, "#ffd6a5", "#b5f5c8")
-BASELINE_COLOURS = ("#8a8a99", "#6f6f7d", "#5a5a66")
+# Site palette (see site/theme.scss). The theme's emerald green and its red mean
+# up and down and nothing else, so chart series use lime, amber and white.
+TEXT, MUTED, BORDER, PANEL = "#e9edf3", "#94a0b4", "#1f2630", "#0e1217"
+LIME, AMBER = "#9be564", "#ffb648"
+MODEL_COLOURS = (LIME, AMBER, TEXT, "#ff9ecb", "#d9c27a")
+BASELINE_COLOURS = ("#8793a6", "#6c7789", "#566070")
+CHART_FONT = "Inter, system-ui, sans-serif"
 
 
 @dataclass(frozen=True, slots=True)
@@ -235,7 +237,7 @@ def tomorrow_fragment(records: Sequence[Record]) -> str:
             f'<div class="call-card {kind_of(name)}">'
             f'<span class="tag">{kind_of(name)}</span>'
             f"<h4>{html.escape(display_name(name))}</h4>"
-            f'<div class="call {"up" if up else "down"}">{"▲ Up" if up else "▼ Down"}</div>'
+            f'<div class="call {_direction_class(up)}">{_direction_text(up)}</div>'
             f'<p class="muted">{html.escape(detail)}</p>{result}'
             "</div>"
         )
@@ -243,6 +245,58 @@ def tomorrow_fragment(records: Sequence[Record]) -> str:
         f'<p class="call-heading">{html.escape(heading)}</p>'
         f'<div class="call-grid">{"".join(cards)}</div>'
         f'<p class="muted small">{html.escape(note)} An experiment, not advice.</p>'
+    )
+
+
+def status_fragment(records: Sequence[Record]) -> str:
+    """A one-line summary of the experiment: the models' latest calls and live record.
+
+    Everything in it is labelled as an experiment. It states what each model
+    called and how often it has been right, and nothing about what to do.
+    """
+    label = '<span class="status-label">Experiment · not advice</span>'
+    scored = scored_predictions(records)
+    if scored.empty:
+        body = (
+            '<span class="status-item"><span class="status-key">Model calls</span>'
+            "start after the first nightly run</span>"
+        )
+        return _status(label + body)
+
+    latest = max(scored["based_on_session"])
+    calls = scored[scored["based_on_session"] == latest].set_index("model")
+    record = {row.name: row for row in track_record(scored)}
+    items = [
+        '<span class="status-item"><span class="status-key">Model calls after the close of'
+        f"</span>{html.escape(_short_date(latest))}</span>"
+    ]
+    for name in ordered(list(calls.index)):
+        if kind_of(name) != "model":
+            continue
+        call = calls.loc[name]
+        up = bool(call["predicted_up"])
+        probability = call["probability_up"]
+        chance = "" if pd.isna(probability) else f" {100 * float(probability):.0f}%"
+        row = record.get(name)
+        hits = f" · {row.hits} of {row.scored} right" if row is not None and row.scored else ""
+        items.append(
+            '<span class="status-item">'
+            f'<span class="status-key">{html.escape(display_name(name))}</span>'
+            f'<span class="{_direction_class(up)}">{_direction_text(up)}</span>'
+            f"{chance}{hits}</span>"
+        )
+    sessions = max((row.scored for row in record.values()), default=0)
+    items.append(
+        '<span class="status-item"><span class="status-key">Sessions scored</span>'
+        f"{sessions}</span>"
+    )
+    return _status(label + "".join(items))
+
+
+def _status(inner: str) -> str:
+    return _raw(
+        '<div class="status-band"><div class="status-strip" role="group" '
+        f'aria-label="Experiment status">{inner}</div></div>'
     )
 
 
@@ -354,6 +408,7 @@ def build_fragments(report: Mapping[str, Any], records: Sequence[Record]) -> dic
     """Every generated file for the NVIDIA page, by file name."""
     return {
         "plotly.md": plotly_loader_fragment(),
+        "status.md": status_fragment(records),
         "tomorrow.md": tomorrow_fragment(records),
         "track_record.md": track_record_fragment(records),
         "backtest.md": backtest_fragment(report),
@@ -416,13 +471,13 @@ def accuracy_figure(report: Mapping[str, Any]) -> go.Figure:
                 x=[100 * row["accuracy"]],
                 y=[display_name(name)],
                 mode="markers",
-                marker={"size": 13, "color": ACCENT if is_model else MUTED},
+                marker={"size": 13, "color": LIME if is_model else MUTED},
                 error_x={
                     "type": "data",
                     "symmetric": False,
                     "array": [100 * (high - row["accuracy"])],
                     "arrayminus": [100 * (row["accuracy"] - low)],
-                    "color": ACCENT if is_model else MUTED,
+                    "color": LIME if is_model else MUTED,
                     "thickness": 2,
                     "width": 6,
                 },
@@ -432,10 +487,10 @@ def accuracy_figure(report: Mapping[str, Any]) -> go.Figure:
         )
     figure.add_vline(
         x=100 * bar,
-        line={"color": VIOLET, "width": 2, "dash": "dash"},
+        line={"color": AMBER, "width": 2, "dash": "dash"},
         annotation_text=f"Always up: {100 * bar:.1f}%",
         annotation_position="top",
-        annotation_font={"color": VIOLET},
+        annotation_font={"color": AMBER},
     )
     figure.add_vline(x=50, line={"color": BORDER, "width": 1})
     _style(figure, height=90 + 46 * len(names))
@@ -450,10 +505,10 @@ def _style(figure: go.Figure, *, height: int) -> None:
         height=height,
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        font={"family": "Ubuntu, system-ui, sans-serif", "color": TEXT, "size": 14},
+        font={"family": CHART_FONT, "color": TEXT, "size": 14},
         margin={"l": 10, "r": 20, "t": 40, "b": 10},
         legend={"orientation": "h", "y": -0.2, "font": {"color": MUTED}},
-        hoverlabel={"bgcolor": "#1f1f25", "bordercolor": BORDER, "font": {"color": TEXT}},
+        hoverlabel={"bgcolor": PANEL, "bordercolor": BORDER, "font": {"color": TEXT}},
     )
     figure.update_xaxes(gridcolor=BORDER, zeroline=False, linecolor=BORDER, automargin=True)
     figure.update_yaxes(gridcolor=BORDER, zeroline=False, linecolor=BORDER, automargin=True)
@@ -476,8 +531,21 @@ def _raw(markup: str) -> str:
     return f"```{{=html}}\n{markup}\n```\n"
 
 
+def _direction_class(up: bool) -> str:
+    return "up" if up else "down"
+
+
+def _direction_text(up: bool) -> str:
+    """Arrow and word together, so direction never depends on colour alone."""
+    return "▲ Up" if up else "▼ Down"
+
+
 def _long_date(day: date) -> str:
     return f"{day:%A} {day.day} {day:%B %Y}"
+
+
+def _short_date(day: date) -> str:
+    return f"{day:%a} {day.day} {day:%b %Y}"
 
 
 def _percent(value: float | None) -> str:

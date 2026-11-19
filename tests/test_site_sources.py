@@ -52,12 +52,117 @@ def test_internal_links_point_at_pages_that_exist(page: Path) -> None:
         assert resolved.resolve().is_file(), f"{page.name} links to missing {target}"
 
 
-def test_theme_uses_the_agreed_palette_and_font() -> None:
-    theme = (SITE / "theme.scss").read_text().lower()
-    for colour in ("#17171b", "#1f1f25", "#ececf1", "#9aa8ff"):
-        assert colour in theme
-    assert '"ubuntu"' in theme
-    assert "family=Ubuntu" in (SITE / "_includes" / "fonts.html").read_text()
+def palette() -> dict[str, str]:
+    """The colours defined as literals at the top of the theme, by variable name."""
+    theme = (SITE / "theme.scss").read_text()
+    return dict(re.findall(r"^\$lab-([a-z]+): (#[0-9a-fA-F]{6});", theme, re.MULTILINE))
+
+
+def luminance(colour: str) -> float:
+    """Relative luminance of a "#rrggbb" colour, as WCAG 2 defines it."""
+    channels = [int(colour[i : i + 2], 16) / 255 for i in (1, 3, 5)]
+    red, green, blue = (
+        c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in channels
+    )
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue
+
+
+def contrast(first: str, second: str) -> float:
+    lighter, darker = sorted((luminance(first), luminance(second)), reverse=True)
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+def test_the_contrast_formula_matches_known_values() -> None:
+    assert contrast("#000000", "#ffffff") == pytest.approx(21.0)
+    assert contrast("#777777", "#ffffff") == pytest.approx(4.48, abs=0.01)
+
+
+def test_theme_uses_the_agreed_palette_and_fonts() -> None:
+    colours = palette()
+    assert colours["bg"] == "#06080b"
+    assert colours["panel"] == "#0e1217"
+    assert colours["green"] == "#1fd68f"
+    assert colours["red"] == "#ff5d6c"
+    theme = (SITE / "theme.scss").read_text()
+    assert '$font-family-sans-serif: "Inter"' in theme
+    assert '$font-family-monospace: "JetBrains Mono"' in theme
+    fonts = (SITE / "_includes" / "fonts.html").read_text()
+    assert "family=Inter" in fonts and "family=JetBrains+Mono" in fonts
+
+
+@pytest.mark.parametrize("colour", ["text", "muted", "green", "red", "lime", "mint"])
+@pytest.mark.parametrize("background", ["bg", "panel"])
+def test_every_text_colour_has_enough_contrast(colour: str, background: str) -> None:
+    colours = palette()
+    ratio = contrast(colours[colour], colours[background])
+    assert ratio >= 4.5, f"{colour} on {background} is only {ratio:.2f}:1"
+
+
+@pytest.mark.parametrize("stop", ["green", "lime", "mint"])
+def test_text_on_the_accent_gradient_has_enough_contrast(stop: str) -> None:
+    colours = palette()
+    assert contrast(colours["ink"], colours[stop]) >= 4.5
+
+
+def test_no_text_is_dimmed_with_opacity() -> None:
+    # Dimming text with opacity or a translucent colour can take it below the
+    # contrast floor without any palette value changing.
+    theme = (SITE / "theme.scss").read_text()
+    # Keyframes for decorative shapes come after this marker and are not text.
+    rules = theme.split(
+        "// -------------------------------------------------------------------- animation"
+    )[0]
+    assert rules != theme
+    assert not re.search(r"^\s*opacity: 0\.[1-9]\d*;", rules, re.MULTILINE)
+    assert not re.search(r"(color|fill): rgba\(\$lab-(muted|text)", theme)
+
+
+def test_direction_colours_are_green_and_red_and_never_the_only_cue() -> None:
+    theme = (SITE / "theme.scss").read_text()
+    call_rules = theme.split("\n.call {", 1)[1].split("\n}\n", 1)[0]
+    assert re.search(r"&\.up \{\s*color: \$lab-green;", call_rules)
+    assert re.search(r"&\.down \{\s*color: \$lab-red;", call_rules)
+    # The arrow and the word come from one helper used for every call.
+    from markets_lab.analysis.nvda.site_page import _direction_text
+
+    assert _direction_text(True) == "▲ Up"
+    assert _direction_text(False) == "▼ Down"
+
+
+def test_motion_is_switched_off_for_people_who_ask_for_less() -> None:
+    theme = (SITE / "theme.scss").read_text()
+    reduced = theme.split("@media (prefers-reduced-motion: reduce)", 1)[1]
+    assert "animation: none !important;" in reduced
+    assert "transition: none !important;" in reduced
+
+    countup = (SITE / "_includes" / "countup.html").read_text()
+    guard = countup.index('matchMedia("(prefers-reduced-motion: reduce)").matches) return;')
+    assert guard < countup.index("requestAnimationFrame")
+    # A stalled animation must not leave a wrong number on the page.
+    assert "setTimeout(finish, duration + 250);" in countup
+    assert "include-after-body: _includes/countup.html" in CONFIG.read_text()
+
+    # The scrolling tape is swapped for a static row of tickers.
+    ticker = (SITE / "_includes" / "ticker.md").read_text()
+    assert 'matchMedia("(prefers-reduced-motion: reduce)").matches' in ticker
+    assert '(still ? "embed-widget-tickers.js" : "embed-widget-ticker-tape.js")' in ticker
+
+
+def test_the_ticker_is_on_both_main_pages_with_its_attribution() -> None:
+    ticker = (SITE / "_includes" / "ticker.md").read_text()
+    assert "NASDAQ:NVDA" in ticker
+    assert "https://www.tradingview.com/" in ticker and "Quotes by TradingView" in ticker
+    for page in ("index.qmd", "experiments/nvidia.qmd"):
+        text = (SITE / page).read_text()
+        assert "{{< include /_includes/ticker.md >}}" in text
+        assert "{{< include /_generated/status.md >}}" in text
+
+
+def test_the_site_names_its_author() -> None:
+    config = CONFIG.read_text()
+    footer = config.split("page-footer:", 1)[1].split("\nformat:", 1)[0]
+    assert "Built by [Aaron Yalong](https://aaronyalong.com)" in footer
+    assert "[Aaron Yalong](https://aaronyalong.com)" in (SITE / "index.qmd").read_text()
 
 
 def home_cards() -> list[str]:
@@ -105,7 +210,7 @@ def test_nvidia_page_has_the_chart_the_notice_and_every_generated_section() -> N
     assert "tradingview-widget-copyright" in page
     assert "https://www.tradingview.com/" in page
     assert "An experiment, not advice." in page
-    for fragment in ("plotly", "tomorrow", "track_record", "backtest", "updated"):
+    for fragment in ("status", "plotly", "tomorrow", "track_record", "backtest", "updated"):
         assert f"{{{{< include /_generated/{fragment}.md >}}}}" in page
     # The chart library must be loaded before the first chart on the page.
     assert page.index("_generated/plotly.md") < page.index("_generated/track_record.md")
@@ -146,6 +251,14 @@ def test_built_canonical_links_and_sitemap_use_the_addresses_the_host_serves() -
         assert address.startswith(f"{SITE_URL}/")
         assert not address.endswith(".html"), f"{address} would be redirected by the host"
     assert f"Sitemap: {SITE_URL}/sitemap.xml" in (BUILT / "robots.txt").read_text()
+
+
+@pytest.mark.skipif(not BUILT.is_dir(), reason="site has not been rendered")
+def test_headline_numbers_are_in_the_built_html_without_javascript() -> None:
+    page = (BUILT / "experiments" / "nvidia.html").read_text()
+    numbers = re.findall(r'<div class="big-number">([^<]+)</div>', page)
+    assert len(numbers) == 3
+    assert all(re.search(r"\d", number) for number in numbers)
 
 
 @pytest.mark.skipif(not BUILT.is_dir(), reason="site has not been rendered")
