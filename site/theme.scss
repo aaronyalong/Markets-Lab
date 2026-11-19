@@ -1,0 +1,158 @@
+/*-- scss:defaults --*/
+
+// Palette, matched to the portfolio site.
+$lab-bg: #17171b;
+$lab-panel: #1f1f25;
+$lab-text: #ececf1;
+$lab-accent: #9aa8ff;
+$lab-muted: #a3a3b2;
+$lab-border: #2c2c35;
+
+$body-bg: $lab-bg;
+$body-color: $lab-text;
+$primary: $lab-accent;
+$link-color: $lab-accent;
+$border-color: $lab-border;
+$card-bg: $lab-panel;
+
+$font-family-sans-serif: "Ubuntu", system-ui, -apple-system, "Segoe UI", sans-serif;
+$font-family-monospace: "Ubuntu Mono", ui-monospace, "SFMono-Regular", monospace;
+$headings-font-weight: 700;
+
+$navbar-bg: $lab-bg;
+$navbar-fg: $lab-text;
+$navbar-hl: $lab-accent;
+$footer-bg: $lab-bg;
+$footer-fg: $lab-muted;
+
+/*-- scss:rules --*/
+
+body {
+  line-height: 1.65;
+}
+
+.navbar {
+  border-bottom: 1px solid $lab-border;
+}
+
+.nav-footer {
+  border-top: 1px solid $lab-border;
+  padding: 1.25rem 1rem;
+  font-size: 0.9rem;
+}
+
+a {
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+// Home page hero
+.hero {
+  padding: 3rem 0 2rem;
+  max-width: 46rem;
+
+  h1 {
+    font-size: clamp(2.2rem, 5vw, 3.4rem);
+    line-height: 1.1;
+    margin-bottom: 1rem;
+  }
+
+  p {
+    font-size: 1.15rem;
+    color: $lab-muted;
+  }
+}
+
+// Cards
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 1.25rem;
+  margin: 1.5rem 0 3rem;
+}
+
+.lab-card {
+  background: $lab-panel;
+  border: 1px solid $lab-border;
+  border-radius: 14px;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+
+  h3 {
+    margin: 0.75rem 0 0.5rem;
+    font-size: 1.3rem;
+    border: 0;
+  }
+
+  p {
+    color: $lab-muted;
+    margin-bottom: 1rem;
+  }
+
+  p:last-child {
+    margin-top: auto;
+    margin-bottom: 0;
+  }
+}
+
+.lab-card.coming-soon {
+  opacity: 0.7;
+}
+
+.tag {
+  display: inline-block;
+  align-self: flex-start;
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid $lab-border;
+  color: $lab-muted;
+}
+
+.tag.live {
+  color: $lab-accent;
+  border-color: $lab-accent;
+}
+
+.card-link {
+  font-weight: 500;
+}
+
+// Panels and big numbers, used on experiment pages
+.panel {
+  background: $lab-panel;
+  border: 1px solid $lab-border;
+  border-radius: 14px;
+  padding: 1.5rem;
+  margin: 1.5rem 0;
+}
+
+.big-number {
+  font-size: clamp(2rem, 5vw, 3rem);
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.muted {
+  color: $lab-muted;
+}
+
+// A notice that must not be missed
+.notice {
+  border-left: 3px solid $lab-accent;
+  background: $lab-panel;
+  padding: 0.9rem 1.1rem;
+  border-radius: 0 10px 10px 0;
+  margin: 1.5rem 0;
+}
+
+table {
+  border-color: $lab-border;
+}

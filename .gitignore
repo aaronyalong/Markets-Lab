@@ -26,6 +26,11 @@ dist/
 .coverage
 htmlcov/
 
+# Quarto build output
+site/_site/
+site/.quarto/
+**/*.quarto_ipynb
+
 # Local assistant config
 CLAUDE.md
 .claude/

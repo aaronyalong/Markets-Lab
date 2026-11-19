@@ -1,0 +1,69 @@
+---
+title: "Method"
+subtitle: "The rules every experiment on this site follows."
+toc: true
+toc-title: "On this page"
+---
+
+This is a hobby research site. The point is not to find a winning strategy; it is
+to ask a question carefully enough that the answer can be trusted, whichever way it
+comes out.
+
+## Baselines come first
+
+Before any model is built, the simplest possible answers are measured: for example
+"it always goes up" or "it does what it did yesterday". A model only counts as
+working if it beats those. A clever model that loses to a one-line rule has not
+found anything.
+
+## Every number comes with its uncertainty
+
+A single figure such as "52% accuracy" says little on its own. Each result is shown
+with a 95% confidence interval: the range the true value plausibly lies in, given
+how much data there is. When two things are compared, the interval is on their
+difference, and if that interval includes zero the honest reading is "no detectable
+difference".
+
+## Negative results are results
+
+If nothing beats the baseline, that is the finding, and it is published as plainly
+as a positive one would be. Results are not rerun with different settings until
+something looks good. Model settings are fixed before the test is run.
+
+## No peeking at the future
+
+The most common way to fool yourself with market data is to let information from
+the future leak into a decision made in the past. Here:
+
+- A model making a call for a given day is trained only on days before it.
+- Testing is "walk-forward": the model is trained on the past, makes its calls for
+  the next stretch, then is retrained with that stretch added, and so on through
+  history.
+- The code has tests that deliberately corrupt all later data and check that
+  earlier calls do not change. If they did, the test fails.
+
+## Costs are included
+
+Simulated results charge a cost every time a position changes. A rule that looks
+good only when trading is free is not good.
+
+## Backtests flatter; the live log decides
+
+A test on history is where approaches get compared, so it tends to favour whatever
+was tried. The stronger evidence is a live record: predictions written down before
+the event and scored afterwards.
+
+The live prediction log on this site can only be added to. Each entry carries a
+fingerprint of the entry before it, so changing or removing an earlier entry is
+detectable. A prediction must be written before the market opens for the day it is
+about, and whether it was right is recorded separately once that day is over.
+
+## What is published
+
+Results, summary figures and the prediction log. Raw price and market data are not
+published. Simulated returns appear only as summary figures.
+
+## What this site is not
+
+It is not advice, it does not trade, and it does not issue signals. See the
+[disclaimer](disclaimer.qmd).

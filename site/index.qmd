@@ -1,0 +1,63 @@
+---
+title: "Markets Lab"
+pagetitle: "Markets Lab"
+title-block-style: none
+toc: false
+---
+
+::: {.hero}
+# Markets, measured.
+
+A hobby research site. Each question gets a naive baseline to beat, a stated
+uncertainty, and an honest answer, including when the answer is "it didn't work".
+:::
+
+::: {.notice}
+**Not financial advice.** Nothing here is a recommendation to buy or sell anything.
+This site makes no trades and gives no signals.
+:::
+
+::: {.card-grid}
+
+::: {.lab-card}
+[Experiment · live]{.tag .live}
+
+### NVIDIA predictor
+
+Can machine learning beat naive baselines at predicting whether NVDA closes up or
+down the next day? Models are tested on two decades of history and then scored
+daily on predictions they cannot take back.
+
+[Open the experiment →](experiments/nvidia.qmd){.card-link}
+:::
+
+::: {.lab-card .coming-soon}
+[Coming soon]{.tag}
+
+### Earnings explainer
+
+Plain-English summaries of company filings with the SEC, where every sentence
+points to the passage it came from and every figure is checked against the filing's
+own data.
+
+Not started yet.
+:::
+
+::: {.lab-card .coming-soon}
+[Coming soon]{.tag}
+
+### Polymarket favorites study
+
+In 15-minute crypto prediction markets, do heavy favorites win as often as their
+price implies once fees are counted?
+
+No results yet.
+:::
+
+:::
+
+## How to read this site
+
+Every experiment follows the same rules, set out on the [Method](method.qmd) page:
+baselines first, no peeking at the future, costs included, and uncertainty shown
+next to every number.

@@ -1,0 +1,30 @@
+project:
+  type: website
+  output-dir: _site
+
+website:
+  title: "Markets Lab"
+  description: "Hobby research on markets: every result has a baseline, an honest uncertainty, and no advice."
+  navbar:
+    left:
+      - href: index.qmd
+        text: Home
+      - text: Experiments
+        menu:
+          - href: experiments/nvidia.qmd
+            text: NVIDIA predictor
+      - href: method.qmd
+        text: Method
+      - href: disclaimer.qmd
+        text: Disclaimer
+  page-footer:
+    center: "Research and education only. **Not financial advice.** No buy or sell signals. [Read the disclaimer](/disclaimer.qmd)."
+
+format:
+  html:
+    theme: [darkly, theme.scss]
+    include-in-header: _includes/fonts.html
+    toc: false
+    smooth-scroll: true
+    link-external-newwindow: true
+    link-external-icon: false

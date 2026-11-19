@@ -1,0 +1,42 @@
+---
+title: "Disclaimer"
+toc: false
+---
+
+::: {.notice}
+**Not financial advice.** This site is a personal research and education project.
+:::
+
+## No advice, no signals
+
+Nothing on this site is a recommendation to buy, sell or hold any security or other
+asset. The predictions shown are the output of experiments and are published to be
+measured, not to be acted on. Do not make financial decisions based on anything
+here.
+
+## No trading
+
+The code behind this site does not place trades and does not hold trading
+credentials. It reads public market data and writes results.
+
+## Simulated results are not real results
+
+Figures labelled as simulated come from applying a rule to past data with assumed
+costs. They leave out things real trading involves, such as slippage and taxes, and
+past behaviour does not tell you what will happen next.
+
+## Accuracy
+
+The data comes from third-party sources and may contain errors or be delayed. The
+analysis may contain mistakes. Everything is provided as is, with no guarantee of
+any kind.
+
+## No affiliation
+
+This site is not affiliated with or endorsed by NVIDIA, TradingView, Yahoo, the
+U.S. Securities and Exchange Commission, Polymarket, or any company mentioned.
+Names are used only to identify what is being studied.
+
+## Code
+
+The code behind this site is MIT-licensed.

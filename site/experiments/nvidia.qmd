@@ -1,0 +1,16 @@
+---
+title: "NVIDIA predictor"
+subtitle: "Can machine learning beat naive baselines at predicting NVDA's next-day direction?"
+toc: false
+---
+
+::: {.notice}
+**An experiment, not advice.** Nothing on this page is a recommendation to buy or
+sell anything.
+:::
+
+This page is being built. It will show the live chart, each model's call for the
+next session, the track record since the prediction log started, and the method.
+
+Until then, the rules every experiment follows are on the [Method](../method.qmd)
+page.

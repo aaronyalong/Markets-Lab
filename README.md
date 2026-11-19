@@ -79,9 +79,19 @@ src/markets_lab/
   analysis/     features, validation, and models
 tests/          pytest suite
 data/           raw local data (gitignored)
+site/           Quarto website (pages, theme); build output is gitignored
+predictions/    the live prediction log, appended to by the nightly job
+reports/        backtest aggregates shown on the site
 ```
 
-A static site will be added under `site/`.
+### The site
+
+The site is a [Quarto](https://quarto.org) website. With Quarto installed:
+
+```bash
+quarto preview site   # live preview while editing
+quarto render site    # build to site/_site/
+```
 
 ## Development
 
