@@ -1,0 +1,76 @@
+name: Nightly NVDA prediction
+
+# Records which way finished sessions closed and appends each model's call on the
+# next session to predictions/nvda.jsonl. Research only, not financial advice.
+#
+# Timing: predictions must be written before the US market opens (09:30 New York,
+# which is 13:30 or 14:30 UTC). Yahoo can take hours after the close to publish the
+# final bar, so the job runs in the morning, twice. The second run is a retry and
+# adds nothing if the first one succeeded. GitHub may start scheduled jobs late;
+# both times leave more than an hour of margin.
+
+on:
+  schedule:
+    - cron: "30 10 * * *" # 05:30 or 06:30 New York
+    - cron: "15 12 * * *" # 07:15 or 08:15 New York
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nightly-nvda-prediction
+  cancel-in-progress: false
+
+jobs:
+  predict:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      LOG: predictions/nvda.jsonl
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Keep a copy of the committed log
+        run: |
+          if [ -f "$LOG" ]; then
+            cp "$LOG" "$RUNNER_TEMP/previous.jsonl"
+          else
+            : > "$RUNNER_TEMP/previous.jsonl"
+          fi
+
+      - name: Record outcomes and append predictions
+        run: uv run python -m markets_lab.analysis.nvda.nightly --log "$LOG"
+
+      # Fails the job if any earlier line was changed, removed or reordered, or if
+      # any rule of the log is broken. Nothing is committed unless this passes.
+      - name: Verify the log
+        run: |
+          uv run python -m markets_lab.analysis.nvda.prediction_log verify \
+            --log "$LOG" --previous "$RUNNER_TEMP/previous.jsonl"
+
+      - name: Refuse to commit anything except the log
+        run: |
+          other="$(git status --porcelain --untracked-files=all -- . ":(exclude)$LOG")"
+          if [ -n "$other" ]; then
+            echo "Unexpected changes outside $LOG:"
+            echo "$other"
+            exit 1
+          fi
+
+      - name: Commit the log
+        run: |
+          if [ -z "$(git status --porcelain -- "$LOG")" ]; then
+            echo "No new records; nothing to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- "$LOG"
+          git commit -m "bot: append NVDA outcomes and predictions ($(date -u +%Y-%m-%d))"
+          git push
