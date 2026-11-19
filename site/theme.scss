@@ -8,6 +8,10 @@ $lab-accent: #9aa8ff;
 $lab-muted: #a3a3b2;
 $lab-border: #2c2c35;
 
+// Two supporting tints, used only in gradients and glows.
+$lab-violet: #c9b6ff;
+$lab-cyan: #8fe3ff;
+
 $body-bg: $lab-bg;
 $body-color: $lab-text;
 $primary: $lab-accent;
@@ -27,18 +31,12 @@ $footer-fg: $lab-muted;
 
 /*-- scss:rules --*/
 
+$wide: 72rem;
+$accent-gradient: linear-gradient(100deg, $lab-accent 0%, $lab-violet 50%, $lab-cyan 100%);
+
 body {
   line-height: 1.65;
-}
-
-.navbar {
-  border-bottom: 1px solid $lab-border;
-}
-
-.nav-footer {
-  border-top: 1px solid $lab-border;
-  padding: 1.25rem 1rem;
-  font-size: 0.9rem;
+  -webkit-font-smoothing: antialiased;
 }
 
 a {
@@ -49,42 +47,438 @@ a:hover {
   text-decoration: underline;
 }
 
-// Home page hero
-.hero {
-  padding: 3rem 0 2rem;
-  max-width: 46rem;
+::selection {
+  background: rgba($lab-accent, 0.35);
+}
+
+// ---------------------------------------------------------------- navigation
+
+.navbar {
+  background: rgba($lab-bg, 0.72) !important;
+  backdrop-filter: saturate(160%) blur(14px);
+  -webkit-backdrop-filter: saturate(160%) blur(14px);
+  border-bottom: 1px solid rgba($lab-border, 0.9);
+}
+
+.navbar-brand {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+
+  &::before {
+    content: "";
+    width: 1.15rem;
+    height: 1.15rem;
+    border-radius: 0.35rem;
+    background: $accent-gradient;
+    box-shadow: 0 0 18px rgba($lab-accent, 0.55);
+  }
+}
+
+.navbar .nav-link {
+  font-weight: 500;
+}
+
+.dropdown-menu {
+  background: $lab-panel;
+  border: 1px solid $lab-border;
+  border-radius: 12px;
+}
+
+.nav-footer {
+  border-top: 1px solid $lab-border;
+  padding: 1.5rem 1rem;
+  font-size: 0.9rem;
+
+  .nav-footer-left,
+  .nav-footer-right {
+    display: none;
+  }
+
+  .nav-footer-center {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+}
+
+// ------------------------------------------------------------------ building blocks
+
+.eyebrow {
+  display: inline-block;
+  font-size: 0.78rem;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: $lab-accent;
+}
+
+.grad {
+  background: $accent-gradient;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.muted {
+  color: $lab-muted;
+}
+
+.btn-lab {
+  display: inline-block;
+  margin: 0.4rem 0.6rem 0 0;
+  padding: 0.7rem 1.25rem;
+  border-radius: 999px;
+  border: 1px solid $lab-border;
+  color: $lab-text;
+  font-size: 1rem;
+  font-weight: 500;
+  transition:
+    transform 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+
+  &:hover {
+    text-decoration: none;
+    transform: translateY(-2px);
+    border-color: $lab-accent;
+    color: $lab-text;
+  }
+
+  &.primary {
+    background: $accent-gradient;
+    border-color: transparent;
+    color: #14141a;
+    box-shadow: 0 8px 30px rgba($lab-accent, 0.35);
+
+    &:hover {
+      color: #14141a;
+      box-shadow: 0 12px 38px rgba($lab-accent, 0.5);
+    }
+  }
+}
+
+.panel {
+  background: $lab-panel;
+  border: 1px solid $lab-border;
+  border-radius: 16px;
+  padding: 1.5rem;
+  margin: 1.5rem 0;
+}
+
+.big-number {
+  font-size: clamp(2rem, 5vw, 3rem);
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.notice {
+  border: 1px solid $lab-border;
+  border-left: 3px solid $lab-accent;
+  background: $lab-panel;
+  padding: 0.9rem 1.1rem;
+  border-radius: 0 12px 12px 0;
+  margin: 1.5rem 0;
+
+  p:last-child {
+    margin-bottom: 0;
+  }
+
+  &.center {
+    text-align: center;
+    border-left-width: 1px;
+    border-radius: 12px;
+    color: $lab-muted;
+
+    strong {
+      color: $lab-text;
+    }
+  }
+}
+
+// ------------------------------------------------------------------ home: layout
+
+// (Named "band" because Pandoc reserves the class "section".)
+.band {
+  max-width: $wide;
+  margin: 0 auto;
+  padding: 0 1.5rem;
+
+  &:last-of-type {
+    padding-bottom: 4.5rem;
+  }
+}
+
+// Quarto sets the top padding of top-level blocks with an id selector, so the
+// vertical rhythm has to be set at the same strength.
+#quarto-content > .band {
+  padding-top: 4.75rem;
+
+  &.tight {
+    padding-top: 1.75rem;
+  }
+}
+
+// Pandoc moves a heading's classes onto the <section> it creates around it.
+.section-title > h2 {
+  font-size: clamp(1.7rem, 3.2vw, 2.4rem);
+  letter-spacing: -0.02em;
+  border: 0;
+  margin: 0.4rem 0 1.75rem;
+  padding: 0;
+}
+
+// -------------------------------------------------------------------- home: hero
+
+.hero-wrap {
+  position: relative;
+  overflow: hidden;
+  border-bottom: 1px solid $lab-border;
+
+  // Soft coloured glows that drift slowly.
+  &::before {
+    content: "";
+    position: absolute;
+    inset: -30% -10% -10% -10%;
+    background:
+      radial-gradient(40rem 28rem at 14% 18%, rgba($lab-accent, 0.34), transparent 62%),
+      radial-gradient(34rem 24rem at 86% 26%, rgba($lab-violet, 0.26), transparent 60%),
+      radial-gradient(36rem 22rem at 60% 96%, rgba($lab-cyan, 0.14), transparent 62%);
+    animation: drift 22s ease-in-out infinite alternate;
+    pointer-events: none;
+  }
+
+  // A faint grid that fades out towards the edges.
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+    background-size: 56px 56px;
+    mask-image: radial-gradient(ellipse 75% 70% at 50% 40%, #000 20%, transparent 78%);
+    -webkit-mask-image: radial-gradient(ellipse 75% 70% at 50% 40%, #000 20%, transparent 78%);
+    pointer-events: none;
+  }
+}
+
+.hero-inner {
+  position: relative;
+  z-index: 1;
+  max-width: $wide;
+  margin: 0 auto;
+  padding: 5.5rem 1.5rem 5rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  gap: 3rem;
+  align-items: center;
+}
+
+.hero-copy {
+  animation: rise 0.8s ease both;
 
   h1 {
-    font-size: clamp(2.2rem, 5vw, 3.4rem);
-    line-height: 1.1;
-    margin-bottom: 1rem;
+    font-size: clamp(2.8rem, 6.4vw, 5.2rem);
+    line-height: 1.02;
+    letter-spacing: -0.035em;
+    margin: 0.9rem 0 1.2rem;
   }
 
   p {
-    font-size: 1.15rem;
+    font-size: 1.22rem;
     color: $lab-muted;
+    max-width: 34rem;
+    margin-bottom: 1.4rem;
+  }
+
+  .eyebrow {
+    font-size: 0.78rem;
   }
 }
 
-// Cards
+.hero-art {
+  animation: rise 0.9s 0.15s ease both;
+
+  .art-note {
+    margin: 0.25rem 0 0;
+    text-align: right;
+    font-size: 0.75rem;
+    letter-spacing: 0.04em;
+    color: rgba($lab-muted, 0.75);
+  }
+}
+
+// The hero illustration: a line of the past, then a cone of what might follow.
+.cone {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+
+  .cone-grid line {
+    stroke: rgba(255, 255, 255, 0.07);
+    stroke-width: 1;
+  }
+
+  .cone-line {
+    filter: drop-shadow(0 0 10px rgba($lab-accent, 0.75));
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation: draw 1.9s 0.35s cubic-bezier(0.6, 0, 0.2, 1) forwards;
+  }
+
+  .cone-area {
+    opacity: 0;
+    animation: appear 1s 1.6s ease forwards;
+  }
+
+  .cone-fan {
+    opacity: 0;
+    transform-origin: 320px 158px;
+    transform: scaleX(0.2);
+    animation: fan 1.1s 2.1s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+  }
+
+  .cone-mid {
+    stroke: rgba(255, 255, 255, 0.55);
+    stroke-width: 1.5;
+    stroke-dasharray: 5 6;
+  }
+
+  .cone-now {
+    stroke: rgba($lab-accent, 0.6);
+    stroke-width: 1;
+    stroke-dasharray: 3 5;
+  }
+
+  .cone-dot {
+    fill: #fff;
+    opacity: 0;
+    animation: appear 0.4s 2s ease forwards;
+  }
+
+  .cone-pulse {
+    fill: none;
+    stroke: $lab-accent;
+    stroke-width: 2;
+    transform-origin: 320px 158px;
+    opacity: 0;
+    animation: pulse 2.4s 2.2s ease-out infinite;
+  }
+
+  .cone-label {
+    fill: rgba($lab-muted, 0.85);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.16em;
+
+    &.accent {
+      fill: $lab-accent;
+    }
+  }
+}
+
+// ------------------------------------------------------------------- home: steps
+
+.steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.step {
+  position: relative;
+  padding: 1.4rem 1.3rem 1.2rem;
+  border-radius: 16px;
+  border: 1px solid $lab-border;
+  background: linear-gradient(180deg, rgba($lab-panel, 0.95), rgba($lab-panel, 0.45));
+  transition:
+    transform 0.25s ease,
+    border-color 0.25s ease;
+
+  &:hover {
+    transform: translateY(-4px);
+    border-color: rgba($lab-accent, 0.55);
+  }
+
+  .bi {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.6rem;
+    height: 2.6rem;
+    border-radius: 12px;
+    font-size: 1.2rem;
+    color: $lab-accent;
+    background: rgba($lab-accent, 0.12);
+    border: 1px solid rgba($lab-accent, 0.25);
+  }
+
+  h4 {
+    font-size: 1.08rem;
+    margin: 1rem 0 0.4rem;
+  }
+
+  p {
+    color: $lab-muted;
+    font-size: 0.95rem;
+    margin: 0;
+  }
+}
+
+// ------------------------------------------------------------------- home: cards
+
 .card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1.25rem;
-  margin: 1.5rem 0 3rem;
+  margin: 0 0 2rem;
 }
 
 .lab-card {
-  background: $lab-panel;
-  border: 1px solid $lab-border;
-  border-radius: 14px;
-  padding: 1.5rem;
+  position: relative;
   display: flex;
   flex-direction: column;
+  padding: 1.6rem;
+  border-radius: 18px;
+  background: $lab-panel;
+  border: 1px solid $lab-border;
+  transition:
+    transform 0.25s ease,
+    border-color 0.25s ease,
+    box-shadow 0.25s ease;
+
+  > p:first-child {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.4rem;
+  }
+
+  .card-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.9rem;
+    height: 2.9rem;
+    border-radius: 14px;
+    font-size: 1.35rem;
+    color: $lab-muted;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid $lab-border;
+  }
+
+  > section {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+  }
 
   h3 {
-    margin: 0.75rem 0 0.5rem;
-    font-size: 1.3rem;
+    margin: 0.85rem 0 0.5rem;
+    font-size: 1.35rem;
+    letter-spacing: -0.01em;
     border: 0;
   }
 
@@ -99,18 +493,59 @@ a:hover {
   }
 }
 
+// The live experiment: gradient edge, glow, and it lifts on hover.
+.lab-card.featured {
+  border-color: transparent;
+  background:
+    linear-gradient($lab-panel, $lab-panel) padding-box,
+    $accent-gradient border-box;
+  box-shadow: 0 18px 50px rgba($lab-accent, 0.16);
+
+  .card-icon {
+    color: #14141a;
+    background: $accent-gradient;
+    border-color: transparent;
+    box-shadow: 0 8px 24px rgba($lab-accent, 0.4);
+  }
+
+  &:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 26px 70px rgba($lab-accent, 0.3);
+  }
+
+  .card-link {
+    font-weight: 500;
+  }
+
+  // Make the whole card clickable through its one link.
+  .card-link::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 18px;
+  }
+}
+
 .lab-card.coming-soon {
-  opacity: 0.7;
+  background: rgba($lab-panel, 0.55);
+  border-style: dashed;
+
+  h3,
+  p {
+    opacity: 0.75;
+  }
 }
 
 .tag {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
   align-self: flex-start;
-  font-size: 0.75rem;
+  gap: 0.45rem;
+  font-size: 0.72rem;
   font-weight: 500;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  padding: 0.2rem 0.6rem;
+  padding: 0.22rem 0.65rem;
   border-radius: 999px;
   border: 1px solid $lab-border;
   color: $lab-muted;
@@ -118,41 +553,158 @@ a:hover {
 
 .tag.live {
   color: $lab-accent;
-  border-color: $lab-accent;
+  border-color: rgba($lab-accent, 0.6);
+  background: rgba($lab-accent, 0.1);
+
+  &::before {
+    content: "";
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: $lab-accent;
+    box-shadow: 0 0 0 0 rgba($lab-accent, 0.7);
+    animation: beacon 1.8s ease-out infinite;
+  }
 }
 
-.card-link {
-  font-weight: 500;
+// ------------------------------------------------------------------ inner pages
+
+.quarto-title-block .title {
+  font-size: clamp(2.2rem, 5vw, 3.4rem);
+  letter-spacing: -0.03em;
+  background: $accent-gradient;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  display: inline-block;
 }
 
-// Panels and big numbers, used on experiment pages
-.panel {
-  background: $lab-panel;
-  border: 1px solid $lab-border;
-  border-radius: 14px;
-  padding: 1.5rem;
-  margin: 1.5rem 0;
-}
-
-.big-number {
-  font-size: clamp(2rem, 5vw, 3rem);
-  font-weight: 700;
-  line-height: 1.1;
-}
-
-.muted {
+.quarto-title-block .subtitle {
   color: $lab-muted;
+  font-size: 1.15rem;
 }
 
-// A notice that must not be missed
-.notice {
+main.content h2 {
+  border-bottom: 0;
+  margin-top: 2.6rem;
+  padding-left: 0.9rem;
   border-left: 3px solid $lab-accent;
-  background: $lab-panel;
-  padding: 0.9rem 1.1rem;
-  border-radius: 0 10px 10px 0;
-  margin: 1.5rem 0;
+  letter-spacing: -0.01em;
 }
 
 table {
   border-color: $lab-border;
+}
+
+// -------------------------------------------------------------------- animation
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes drift {
+  from {
+    transform: translate3d(-2%, -1%, 0) scale(1);
+  }
+
+  to {
+    transform: translate3d(3%, 2%, 0) scale(1.08);
+  }
+}
+
+@keyframes draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes appear {
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fan {
+  to {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(3.4);
+  }
+}
+
+@keyframes beacon {
+  0% {
+    box-shadow: 0 0 0 0 rgba($lab-accent, 0.7);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0.55rem rgba($lab-accent, 0);
+  }
+}
+
+// People who ask for less motion get the finished picture with no movement.
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .cone .cone-line {
+    stroke-dashoffset: 0;
+  }
+
+  .cone .cone-area,
+  .cone .cone-dot {
+    opacity: 1;
+  }
+
+  .cone .cone-fan {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+// ----------------------------------------------------------------- small screens
+
+@media (max-width: 62rem) {
+  .hero-inner {
+    grid-template-columns: 1fr;
+    padding: 3.5rem 1.25rem 3rem;
+    gap: 2rem;
+  }
+
+  .steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .card-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 36rem) {
+  .steps {
+    grid-template-columns: 1fr;
+  }
 }

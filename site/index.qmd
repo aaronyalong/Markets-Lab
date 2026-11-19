@@ -1,25 +1,143 @@
 ---
-title: "Markets Lab"
 pagetitle: "Markets Lab"
-title-block-style: none
+page-layout: custom
 toc: false
 ---
 
-::: {.hero}
-# Markets, measured.
+:::::: {.hero-wrap}
+::::: {.hero-inner}
+:::: {.hero-copy}
 
-A hobby research site. Each question gets a naive baseline to beat, a stated
-uncertainty, and an honest answer, including when the answer is "it didn't work".
-:::
+[Hobby research lab]{.eyebrow}
 
-::: {.notice}
+# Markets, [measured.]{.grad}
+
+Each question gets a naive baseline to beat, a stated uncertainty, and an honest
+answer, including when the answer is "it didn't work".
+
+[Open the NVIDIA experiment →](experiments/nvidia.qmd){.btn-lab .primary}
+[How it works](method.qmd){.btn-lab}
+
+::::
+
+:::: {.hero-art}
+
+```{=html}
+<svg class="cone" viewBox="0 0 540 380" role="img" aria-label="Illustration: a line of past values reaching today, then widening into a cone of uncertainty.">
+  <defs>
+    <linearGradient id="lineGrad" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0" stop-color="#9aa8ff" stop-opacity="0.55"/>
+      <stop offset="0.6" stop-color="#c9b6ff"/>
+      <stop offset="1" stop-color="#ffffff"/>
+    </linearGradient>
+    <linearGradient id="areaGrad" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#9aa8ff" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#9aa8ff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="coneGrad" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0" stop-color="#c9b6ff" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#8fe3ff" stop-opacity="0.10"/>
+    </linearGradient>
+  </defs>
+
+  <g class="cone-grid">
+    <line x1="20" y1="70" x2="520" y2="70"/>
+    <line x1="20" y1="140" x2="520" y2="140"/>
+    <line x1="20" y1="210" x2="520" y2="210"/>
+    <line x1="20" y1="280" x2="520" y2="280"/>
+  </g>
+
+  <path class="cone-area" fill="url(#areaGrad)"
+        d="M20 262 L48 248 L76 256 L104 228 L132 238 L160 206 L188 220 L216 190 L244 202 L272 172 L300 182 L320 158 L320 330 L20 330 Z"/>
+  <path class="cone-line" fill="none" stroke="url(#lineGrad)" stroke-width="4"
+        stroke-linecap="round" stroke-linejoin="round" pathLength="1"
+        d="M20 262 L48 248 L76 256 L104 228 L132 238 L160 206 L188 220 L216 190 L244 202 L272 172 L300 182 L320 158"/>
+
+  <g class="cone-fan">
+    <polygon fill="url(#coneGrad)" opacity="0.55" points="320,158 520,52 520,258"/>
+    <polygon fill="url(#coneGrad)" points="320,158 520,104 520,206"/>
+    <line class="cone-mid" x1="320" y1="158" x2="520" y2="150"/>
+  </g>
+
+  <line class="cone-now" x1="320" y1="36" x2="320" y2="330"/>
+  <circle class="cone-pulse" cx="320" cy="158" r="7"/>
+  <circle class="cone-dot" cx="320" cy="158" r="5"/>
+
+  <text class="cone-label" x="170" y="352" text-anchor="middle">WHAT HAPPENED</text>
+  <text class="cone-label accent" x="320" y="26" text-anchor="middle">TODAY</text>
+  <text class="cone-label" x="420" y="352" text-anchor="middle">WHAT MIGHT</text>
+</svg>
+<p class="art-note">Illustration, not data.</p>
+```
+
+::::
+:::::
+::::::
+
+::::: {.band .tight}
+::: {.notice .center}
 **Not financial advice.** Nothing here is a recommendation to buy or sell anything.
 This site makes no trades and gives no signals.
 :::
+:::::
+
+::::: {.band}
+
+[The method]{.eyebrow}
+
+## Four rules, every time {.section-title}
+
+:::: {.steps}
+
+::: {.step}
+`<i class="bi bi-flag"></i>`{=html}
+
+#### Baselines first
+
+A model only counts if it beats the simplest possible answer, such as "it always
+goes up".
+:::
+
+::: {.step}
+`<i class="bi bi-eye-slash"></i>`{=html}
+
+#### No peeking
+
+Every call is made by a model that has only seen the days before it. Tests fail if
+the future leaks in.
+:::
+
+::: {.step}
+`<i class="bi bi-arrows-collapse-vertical"></i>`{=html}
+
+#### Uncertainty shown
+
+Every number comes with the range it plausibly lies in. If a difference could be
+zero, it is reported as no difference.
+:::
+
+::: {.step}
+`<i class="bi bi-journal-check"></i>`{=html}
+
+#### Live log decides
+
+Predictions are written down before the market opens and scored afterwards, in a
+record that cannot be edited.
+:::
+
+::::
+:::::
+
+::::: {.band}
+
+[Experiments]{.eyebrow}
+
+## What's in the lab {.section-title}
 
 ::: {.card-grid}
 
-::: {.lab-card}
+::: {.lab-card .featured}
+`<i class="bi bi-graph-up-arrow card-icon"></i>`{=html}
 [Experiment · live]{.tag .live}
 
 ### NVIDIA predictor
@@ -32,6 +150,7 @@ daily on predictions they cannot take back.
 :::
 
 ::: {.lab-card .coming-soon}
+`<i class="bi bi-file-earmark-text card-icon"></i>`{=html}
 [Coming soon]{.tag}
 
 ### Earnings explainer
@@ -44,6 +163,7 @@ Not started yet.
 :::
 
 ::: {.lab-card .coming-soon}
+`<i class="bi bi-bullseye card-icon"></i>`{=html}
 [Coming soon]{.tag}
 
 ### Polymarket favorites study
@@ -56,8 +176,6 @@ No results yet.
 
 :::
 
-## How to read this site
+Every experiment follows the rules on the [Method](method.qmd) page.
 
-Every experiment follows the same rules, set out on the [Method](method.qmd) page:
-baselines first, no peeking at the future, costs included, and uncertainty shown
-next to every number.
+:::::
