@@ -1,16 +1,172 @@
 ---
-title: "NVIDIA predictor"
-subtitle: "Can machine learning beat naive baselines at predicting NVDA's next-day direction?"
+pagetitle: "NVIDIA predictor · Markets Lab"
+page-layout: custom
 toc: false
 ---
 
+:::::: {.page-hero}
+::::: {.band}
+
+[Experiment · live]{.tag .live}
+
+# NVIDIA [predictor]{.grad}
+
+Can machine learning beat naive baselines at predicting whether NVDA closes up or
+down the next day?
+
 ::: {.notice}
 **An experiment, not advice.** Nothing on this page is a recommendation to buy or
-sell anything.
+sell anything. The calls below are published so they can be scored, not so they can
+be followed.
 :::
 
-This page is being built. It will show the live chart, each model's call for the
-next session, the track record since the prediction log started, and the method.
+:::::
+::::::
 
-Until then, the rules every experiment follows are on the [Method](../method.qmd)
-page.
+::::: {.band}
+
+[The stock]{.eyebrow}
+
+## Live chart {.section-title}
+
+::: {.tv-panel}
+
+```{=html}
+<div class="tradingview-widget-container" style="height:100%;width:100%">
+  <div class="tradingview-widget-container__widget" style="height:calc(100% - 32px);width:100%"></div>
+  <div class="tradingview-widget-copyright"><a href="https://www.tradingview.com/symbols/NASDAQ-NVDA/" rel="noopener nofollow" target="_blank"><span class="blue-text">NVDA chart by TradingView</span></a></div>
+  <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js" async>
+  {
+    "autosize": true,
+    "symbol": "NASDAQ:NVDA",
+    "interval": "D",
+    "timezone": "America/New_York",
+    "theme": "dark",
+    "style": "1",
+    "locale": "en",
+    "backgroundColor": "#1f1f25",
+    "gridColor": "rgba(255, 255, 255, 0.06)",
+    "allow_symbol_change": false,
+    "hide_side_toolbar": true,
+    "calendar": false,
+    "support_host": "https://www.tradingview.com"
+  }
+  </script>
+</div>
+```
+
+:::
+
+[The chart is provided by TradingView and shows their data. The models on this page
+do not use it; they work from daily closing data only.]{.muted .small}
+
+:::::
+
+::::: {.band}
+
+[The latest calls]{.eyebrow}
+
+## Tomorrow's call {.section-title}
+
+{{< include /_generated/tomorrow.md >}}
+
+:::::
+
+::::: {.band}
+
+[Live, since the log started]{.eyebrow}
+
+## Track record {.section-title}
+
+Every call is written to a log before the market opens and scored after it closes.
+The log can only be added to; see the [Method](../method.qmd) page for how that is
+enforced.
+
+{{< include /_generated/plotly.md >}}
+
+{{< include /_generated/track_record.md >}}
+
+:::::
+
+::::: {.band}
+
+[Tested on history]{.eyebrow}
+
+## What two decades of history say {.section-title}
+
+Before going live, every baseline and model was tested on past data, always
+predicting a day using only the days before it.
+
+{{< include /_generated/backtest.md >}}
+
+:::::
+
+::::: {.band .prose}
+
+[How it was done]{.eyebrow}
+
+## Method {.section-title}
+
+### The question
+
+Each day after the close, every predictor makes one call: will the next session
+close higher than this one? "Higher" uses the closing price adjusted for dividends
+and splits, and a flat day counts as not up.
+
+### The baselines
+
+Three rules that need no learning, and that any model has to beat:
+
+- **Always up.** NVDA has closed up on a little over half of all days, so this is
+  right more often than a coin flip. Following it is the same as buying and holding.
+- **Persistence.** Tomorrow will do what today did.
+- **200-day average rule.** Up when the price is above its average of the last 200
+  sessions.
+
+### The models
+
+- **Logistic regression**: a weighted sum of the features.
+- **XGBoost**: boosted decision trees, which can pick up thresholds and
+  combinations of features.
+- **LSTM**: a small neural network that reads the last 20 sessions in order.
+
+Each model's settings were fixed before it was tested and were not adjusted
+afterwards to improve the result.
+
+### The features
+
+Twenty numbers describing recent price and volume behaviour, all computed from data
+up to that day's close: returns over the last 1 to 21 sessions, how volatile the
+last week and month were, two standard momentum indicators (RSI and MACD), how far
+the price sits from its 10, 50 and 200-day averages, volume compared with its recent
+average, the day's high-to-low range, and the day of the week.
+
+### The test
+
+Testing is walk-forward. A model is trained on the first five years, makes its
+calls for the next 21 sessions, is retrained with those sessions added, and so on to
+the present. No call is ever made by a model that has seen that day or any day
+after it. Automated tests replace all later data with nonsense and check that
+earlier calls do not change.
+
+### Costs and simulated returns
+
+The simulated strategy holds the stock on days called up and holds cash on days
+called down. Each change of position is charged 5 basis points (0.05%) of the
+amount traded. Cash earns nothing in the simulation.
+
+### Limitations
+
+- **One stock, one period.** NVDA rose enormously over the tested years. A rule that
+  simply stays invested was always going to be hard to beat here.
+- **The backtest flatters.** It is where approaches get compared, so the live log
+  is the stronger evidence, and it needs more than a year of calls to say much.
+- **Technical features only.** The models see price and volume history, nothing
+  about earnings, news or the wider market.
+- **Simulated is not real.** No slippage, no taxes, no interest on cash.
+- **The data source is unofficial.** Daily prices come from Yahoo Finance and are
+  checked before use, but they are not guaranteed.
+
+{{< include /_generated/updated.md >}}
+
+:::::

@@ -89,9 +89,16 @@ reports/        backtest aggregates shown on the site
 The site is a [Quarto](https://quarto.org) website. With Quarto installed:
 
 ```bash
+uv run python -m markets_lab.analysis.nvda.site_page   # first time only, see below
 quarto preview site   # live preview while editing
 quarto render site    # build to site/_site/
 ```
+
+The NVIDIA page's numbers, tables and charts are written by
+`markets_lab.analysis.nvda.site_page` from `predictions/nvda.jsonl` and
+`reports/nvda_backtest.json` into `site/_generated/` (gitignored). Quarto reruns it
+before every render, but the files must exist once before Quarto will start, hence
+the first command.
 
 ## Development
 

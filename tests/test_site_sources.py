@@ -101,6 +101,28 @@ def test_home_and_disclaimer_state_it_in_the_body_too() -> None:
     assert "Not financial advice" in (SITE / "disclaimer.qmd").read_text()
 
 
+def test_nvidia_page_has_the_chart_the_notice_and_every_generated_section() -> None:
+    page = (SITE / "experiments" / "nvidia.qmd").read_text()
+    assert '"symbol": "NASDAQ:NVDA"' in page
+    assert "embed-widget-advanced-chart.js" in page
+    # TradingView's free widget requires its attribution link to stay.
+    assert "tradingview-widget-copyright" in page
+    assert "https://www.tradingview.com/" in page
+    assert "An experiment, not advice." in page
+    for fragment in ("plotly", "tomorrow", "track_record", "backtest", "updated"):
+        assert f"{{{{< include /_generated/{fragment}.md >}}}}" in page
+    # The chart library must be loaded before the first chart on the page.
+    assert page.index("_generated/plotly.md") < page.index("_generated/track_record.md")
+    for heading in ("Live chart", "Tomorrow's call", "Track record", "Method"):
+        assert f"## {heading}" in page
+
+
+def test_generated_fragments_are_rebuilt_before_each_render_and_not_committed() -> None:
+    assert "pre-render: uv run python -m markets_lab.analysis.nvda.site_page" in CONFIG.read_text()
+    ignored = (SITE.parent / ".gitignore").read_text()
+    assert "site/_generated/" in ignored
+
+
 @pytest.mark.skipif(not BUILT.is_dir(), reason="site has not been rendered")
 def test_every_built_page_carries_the_disclaimer() -> None:
     built_pages = sorted(BUILT.rglob("*.html"))

@@ -567,6 +567,258 @@ a:hover {
   }
 }
 
+// --------------------------------------------------------------- experiment pages
+
+.page-hero {
+  position: relative;
+  overflow: hidden;
+  border-bottom: 1px solid $lab-border;
+  padding-bottom: 3rem;
+  background:
+    radial-gradient(36rem 22rem at 12% 0%, rgba($lab-accent, 0.22), transparent 62%),
+    radial-gradient(30rem 20rem at 88% 10%, rgba($lab-violet, 0.16), transparent 60%);
+
+  h1 {
+    font-size: clamp(2.6rem, 6vw, 4.6rem);
+    line-height: 1.04;
+    letter-spacing: -0.035em;
+    margin: 1rem 0 1rem;
+  }
+
+  p {
+    font-size: 1.2rem;
+    color: $lab-muted;
+    max-width: 44rem;
+  }
+
+  .notice {
+    max-width: 44rem;
+    margin-bottom: 0;
+
+    p {
+      font-size: 1rem;
+      color: $lab-text;
+    }
+  }
+}
+
+#quarto-content > .page-hero > .band,
+.page-hero .band {
+  padding-top: 4rem;
+}
+
+.small {
+  font-size: 0.88rem;
+}
+
+.prose {
+  h3 {
+    margin-top: 2.2rem;
+    font-size: 1.3rem;
+  }
+
+  p,
+  ul {
+    max-width: 46rem;
+  }
+}
+
+// TradingView chart
+.tv-panel {
+  height: 560px;
+  padding: 0.6rem;
+  border-radius: 18px;
+  border: 1px solid $lab-border;
+  background: $lab-panel;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+  margin-bottom: 0.9rem;
+}
+
+.tradingview-widget-copyright {
+  font-size: 0.8rem;
+  line-height: 32px;
+  text-align: center;
+
+  .blue-text {
+    color: $lab-muted;
+  }
+}
+
+// Tomorrow's call
+.call-heading {
+  font-size: 1.15rem;
+  font-weight: 500;
+  margin-bottom: 1.1rem;
+}
+
+.call-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(13.5rem, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.call-card {
+  position: relative;
+  padding: 1.2rem 1.25rem 1rem;
+  border-radius: 16px;
+  border: 1px solid $lab-border;
+  background: $lab-panel;
+
+  h4 {
+    margin: 0.7rem 0 0.2rem;
+    font-size: 1.05rem;
+  }
+
+  p {
+    margin: 0.35rem 0 0;
+    font-size: 0.88rem;
+  }
+
+  &.model {
+    border-color: transparent;
+    background:
+      linear-gradient($lab-panel, $lab-panel) padding-box,
+      $accent-gradient border-box;
+  }
+
+  &.baseline {
+    background: rgba($lab-panel, 0.55);
+  }
+}
+
+// Direction is shown in the site's own colours on purpose: not green and red,
+// which would read as a trading signal.
+.call {
+  font-size: 1.9rem;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+
+  &.up {
+    color: $lab-cyan;
+  }
+
+  &.down {
+    color: $lab-violet;
+  }
+}
+
+.call-result {
+  position: absolute;
+  top: 1.1rem;
+  right: 1.1rem;
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid $lab-border;
+  color: $lab-muted;
+
+  &.right {
+    color: $lab-text;
+    border-color: rgba($lab-accent, 0.6);
+  }
+}
+
+// Headline numbers
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 1.25rem 0 1.5rem;
+}
+
+.stat {
+  padding: 1.4rem 1.4rem 1.1rem;
+  border-radius: 16px;
+  border: 1px solid $lab-border;
+  background: linear-gradient(180deg, rgba($lab-panel, 0.95), rgba($lab-panel, 0.45));
+
+  .big-number {
+    background: $accent-gradient;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    display: inline-block;
+  }
+
+  p {
+    margin: 0.4rem 0 0;
+  }
+}
+
+.findings {
+  padding: 1.1rem 1.25rem 1.1rem 2.4rem;
+  border-radius: 16px;
+  border: 1px solid $lab-border;
+  border-left: 3px solid $lab-accent;
+  background: $lab-panel;
+  font-size: 1.05rem;
+
+  li + li {
+    margin-top: 0.45rem;
+  }
+}
+
+// Tables
+.lab-table {
+  width: 100%;
+  margin: 1.25rem 0;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid $lab-border;
+  border-radius: 16px;
+  overflow: hidden;
+  background: $lab-panel;
+
+  th,
+  td {
+    padding: 0.8rem 1rem;
+    text-align: left;
+    vertical-align: top;
+    border-bottom: 1px solid $lab-border;
+  }
+
+  th {
+    font-size: 0.8rem;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: $lab-muted;
+    background: rgba(255, 255, 255, 0.02);
+  }
+
+  tbody tr:last-child td {
+    border-bottom: 0;
+  }
+
+  tbody tr:hover td {
+    background: rgba($lab-accent, 0.05);
+  }
+}
+
+.plotly-graph-div {
+  margin: 0.5rem 0 1rem;
+}
+
+@media (max-width: 62rem) {
+  .stat-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .tv-panel {
+    height: 440px;
+  }
+
+  .lab-table {
+    display: block;
+    overflow-x: auto;
+  }
+}
+
 // ------------------------------------------------------------------ inner pages
 
 .quarto-title-block .title {
