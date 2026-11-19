@@ -1,8 +1,8 @@
 # Markets Lab
 
-A hobby research project with two small experiments about markets. Everything here
-is measurement and analysis: each result is compared against a baseline, reported
-with confidence intervals, and negative results are published as findings.
+A hobby research site about markets. Everything here is measurement and analysis:
+each result is compared against a baseline, reported with confidence intervals, and
+negative results are published as findings.
 
 > **Not financial advice.** This project is for research and education only. It
 > produces no buy or sell signals and no trading recommendations. The code never
@@ -11,59 +11,84 @@ with confidence intervals, and negative results are published as findings.
 
 ## Status
 
-Early scaffold. No data has been collected and there are no results yet.
+Work in progress. Nothing is published yet and there are no results.
 
-### Launch blockers
+| Part | State |
+|---|---|
+| NVIDIA next-day direction experiment | In progress |
+| Earnings explainer (cited summaries of SEC filings) | Planned, not started |
+| Polymarket favorites study | Parked; data collection code exists, no analysis |
 
-The repository stays private and the site stays unpublished until each of these is
-resolved:
+## What it will contain
 
-- [ ] **Data terms for Experiment 1.** The Polymarket US participant agreement says
-      market data "may not be redistributed except as PMUS expressly permits". Ask
-      data@polymarket.us whether publishing aggregated statistics (win rates,
-      calibration curves, confidence intervals) is permitted, and record the answer
-      here. Raw quotes stay local and gitignored regardless of the answer.
+### NVIDIA predictor (experiment)
 
-## Experiments
+Can machine learning beat naive baselines at predicting whether NVDA closes up or
+down the next day?
 
-### 1. Are prediction-market favorites priced right?
+- Naive baselines first: always-up, persistence, a moving-average rule, and
+  buy-and-hold.
+- Then logistic regression, XGBoost on technical features, and an LSTM, each added
+  only after the previous one has been measured.
+- Walk-forward validation only, tests designed to fail on look-ahead leakage, and
+  transaction costs included.
+- A nightly job scores yesterday's prediction, makes tomorrow's, and appends both to
+  a prediction log that is never edited afterwards. The log records direction only:
+  date, model, predicted direction, probability, and whether it was right.
+- "No model beats buy-and-hold" is a valid outcome and will be reported as such.
+
+### Earnings explainer (planned)
+
+Plain-English summaries of company 10-Q and 10-K filings from SEC EDGAR, where
+every sentence cites its source passage and every extracted figure is checked
+against the filing's XBRL data.
+
+### Polymarket favorites study (parked)
 
 In 15-minute crypto Up/Down prediction markets, when one side is priced at 80¢ or
 more at 12 minutes 30 seconds into the window, does it win more often than its price
-implies once fees and spread are counted?
+implies once fees and spread are counted? A read-only backfill of public market data
+exists under `src/markets_lab/collectors/polymarket/`. No analysis has been done.
 
-A read-only recorder will log prices, depth, and outcomes. The analysis will report
-win rate by price bucket, calibration curves, Wilson confidence intervals,
-fee-inclusive simulated profit and loss, and the sample size each bucket needs
-before any conclusion is drawn.
+## Data and publishing rules
 
-### 2. Can ML beat naive baselines on NVIDIA's next-day direction?
+- Raw price and market data stays on the machine that collected it and is
+  gitignored. The site shows aggregates and the prediction log only.
+- No prices or daily returns are published. Simulated returns appear only as
+  summary figures (for example total and annualised return against buy-and-hold,
+  with intervals).
+- Test fixtures are synthetic. No real market data is stored in this repository.
 
-Daily NVDA price data, with naive baselines first (always-up, persistence, a
-moving-average rule, buy-and-hold), then logistic regression, XGBoost, and an LSTM.
-Evaluation is walk-forward only, with tests designed to fail on lookahead leakage,
-and transaction costs included.
+### Launch blocker for Polymarket results
+
+No Polymarket results are published until this is resolved. It does not block the
+rest of the site, which can go live with the Polymarket study shown as "Coming
+soon" and no data.
+
+- [ ] **Data terms.** The Polymarket US participant agreement says market data "may
+      not be redistributed except as PMUS expressly permits". Ask
+      data@polymarket.us whether publishing aggregated statistics (win rates,
+      calibration curves, confidence intervals) is permitted, and record the answer
+      here. Raw quotes stay local and gitignored regardless of the answer.
 
 ## Repository layout
 
 ```
 src/markets_lab/
-  collectors/   read-only market data recorder and price fetchers
-  analysis/     calibration, backtests, and models
+  collectors/   data fetching (polymarket/ is the parked backfill)
+  analysis/     features, validation, and models
 tests/          pytest suite
-data/           raw local databases (gitignored)
+data/           raw local data (gitignored)
 ```
 
-A static site presenting the results will be added under `site/`. It will show
-aggregated results only, never raw market data, and it is not published until the
-launch blockers above are cleared.
+A static site will be added under `site/`.
 
 ## Development
 
 Requires [uv](https://docs.astral.sh/uv/), which installs Python 3.12 for you.
 
 ```bash
-uv sync              # create .venv and install dev tools
+uv sync              # create .venv and install dependencies
 uv run pytest        # tests
 uv run ruff check    # lint
 uv run ruff format   # format
