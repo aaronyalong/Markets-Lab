@@ -1,0 +1,223 @@
+{
+  "generated_at": "2026-11-19T02:12:12Z",
+  "symbol": "NVDA",
+  "data": {
+    "sessions_with_features": 6800,
+    "first_feature_session": "1999-11-04",
+    "last_labelled_session": "2026-11-16",
+    "tested_sessions": 5539,
+    "first_tested_session": "2004-11-10",
+    "last_tested_session": "2026-11-16",
+    "share_of_up_days_tested": 0.524282
+  },
+  "validation": {
+    "scheme": "walk-forward, expanding window",
+    "initial_train_sessions": 1260,
+    "refit_every_sessions": 21,
+    "folds": 264
+  },
+  "strategy": "hold the stock when the call is up, cash otherwise",
+  "cost_levels_bps": [
+    0,
+    5,
+    10
+  ],
+  "primary_cost_bps": 5,
+  "intervals": {
+    "confidence": 0.95,
+    "accuracy": "Wilson",
+    "returns_and_differences": "paired moving-block bootstrap",
+    "block_length_sessions": 21,
+    "resamples": 2000,
+    "seed": 20261119
+  },
+  "predictors": {
+    "always_up": {
+      "kind": "baseline",
+      "sessions": 5539,
+      "hits": 2904,
+      "accuracy": 0.524282,
+      "accuracy_interval": [
+        0.511118,
+        0.537413
+      ],
+      "share_called_up": 1.0,
+      "trades": 1,
+      "returns_by_cost_bps": {
+        "0": {
+          "total_return": 1149.957829,
+          "annualised_return": 0.378049,
+          "annualised_return_interval": [
+            0.130177,
+            0.662691
+          ],
+          "annualised_volatility": 0.482537,
+          "sharpe_ratio": 0.906037
+        },
+        "5": {
+          "total_return": 1149.38235,
+          "annualised_return": 0.378018,
+          "annualised_return_interval": [
+            0.130176,
+            0.66269
+          ],
+          "annualised_volatility": 0.482536,
+          "sharpe_ratio": 0.905991
+        },
+        "10": {
+          "total_return": 1148.806871,
+          "annualised_return": 0.377986,
+          "annualised_return_interval": [
+            0.130175,
+            0.662688
+          ],
+          "annualised_volatility": 0.482536,
+          "sharpe_ratio": 0.905944
+        }
+      }
+    },
+    "persistence": {
+      "kind": "baseline",
+      "sessions": 5539,
+      "hits": 2697,
+      "accuracy": 0.486911,
+      "accuracy_interval": [
+        0.473762,
+        0.500078
+      ],
+      "share_called_up": 0.524282,
+      "trades": 2842,
+      "returns_by_cost_bps": {
+        "0": {
+          "total_return": 6.489704,
+          "annualised_return": 0.095934,
+          "annualised_return_interval": [
+            -0.044581,
+            0.245346
+          ],
+          "annualised_volatility": 0.32511,
+          "sharpe_ratio": 0.444616
+        },
+        "5": {
+          "total_return": 0.807914,
+          "annualised_return": 0.027307,
+          "annualised_return_interval": [
+            -0.103445,
+            0.167887
+          ],
+          "annualised_volatility": 0.325131,
+          "sharpe_ratio": 0.245717
+        },
+        "10": {
+          "total_return": -0.563904,
+          "annualised_return": -0.037053,
+          "annualised_return_interval": [
+            -0.159792,
+            0.095895
+          ],
+          "annualised_volatility": 0.3252,
+          "sharpe_ratio": 0.046838
+        }
+      }
+    },
+    "ma_200": {
+      "kind": "baseline",
+      "sessions": 5539,
+      "hits": 2896,
+      "accuracy": 0.522838,
+      "accuracy_interval": [
+        0.509673,
+        0.535971
+      ],
+      "share_called_up": 0.742914,
+      "trades": 94,
+      "returns_by_cost_bps": {
+        "0": {
+          "total_return": 1632.583889,
+          "annualised_return": 0.40018,
+          "annualised_return_interval": [
+            0.203514,
+            0.642386
+          ],
+          "annualised_volatility": 0.371792,
+          "sharpe_ratio": 1.089638
+        },
+        "5": {
+          "total_return": 1557.563482,
+          "annualised_return": 0.397188,
+          "annualised_return_interval": [
+            0.200615,
+            0.638913
+          ],
+          "annualised_volatility": 0.371792,
+          "sharpe_ratio": 1.083879
+        },
+        "10": {
+          "total_return": 1485.95332,
+          "annualised_return": 0.394201,
+          "annualised_return_interval": [
+            0.197923,
+            0.635511
+          ],
+          "annualised_volatility": 0.371795,
+          "sharpe_ratio": 1.078112
+        }
+      }
+    }
+  },
+  "comparisons": [
+    {
+      "predictor": "persistence",
+      "baseline": "always_up",
+      "accuracy_difference": -0.037371,
+      "accuracy_difference_interval": [
+        -0.053624,
+        -0.020401
+      ],
+      "annualised_return_difference": -0.35071,
+      "annualised_return_difference_interval": [
+        -0.559804,
+        -0.168735
+      ],
+      "cost_bps": 5
+    },
+    {
+      "predictor": "ma_200",
+      "baseline": "always_up",
+      "accuracy_difference": -0.001444,
+      "accuracy_difference_interval": [
+        -0.013545,
+        0.011916
+      ],
+      "annualised_return_difference": 0.01917,
+      "annualised_return_difference_interval": [
+        -0.151339,
+        0.185933
+      ],
+      "cost_bps": 5
+    },
+    {
+      "predictor": "ma_200",
+      "baseline": "persistence",
+      "accuracy_difference": 0.035927,
+      "accuracy_difference_interval": [
+        0.02022,
+        0.052902
+      ],
+      "annualised_return_difference": 0.36988,
+      "annualised_return_difference_interval": [
+        0.218256,
+        0.549274
+      ],
+      "cost_bps": 5
+    }
+  ],
+  "caveats": [
+    "Research only, not financial advice.",
+    "The backtest is where predictors are compared, so it flatters whichever looks best. The live prediction log is the real test.",
+    "Several predictors are compared, so some intervals will exclude zero by chance.",
+    "Accuracy intervals (Wilson) treat sessions as independent.",
+    "Simulated returns assume a flat cost per trade, no slippage or taxes, and cash that earns no interest.",
+    "Following always_up is buy-and-hold; it is the return benchmark."
+  ]
+}

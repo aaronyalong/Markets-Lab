@@ -1,0 +1,339 @@
+"""Run the walk-forward backtest and write the aggregate report.
+
+Every predictor makes its calls through the same walk-forward folds, so they are
+scored on exactly the same sessions. The report holds aggregates only: counts,
+accuracies, summary returns and intervals. It contains no prices and no per-day
+series, so it is safe to commit and publish.
+
+Run it from the repository root, after fetching prices:
+
+    uv run python -m markets_lab.collectors.nvda_prices
+    uv run python -m markets_lab.analysis.nvda.backtest
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import math
+import sys
+from collections.abc import Callable, Mapping, Sequence
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import pandas as pd
+
+from markets_lab.analysis.nvda.baselines import AlwaysUp, MovingAverageRule, Persistence
+from markets_lab.analysis.nvda.features import Dataset, build_dataset
+from markets_lab.analysis.nvda.metrics import (
+    BootstrapConfig,
+    annualised_return,
+    annualised_volatility,
+    bootstrap_interval,
+    hits,
+    sharpe_ratio,
+    strategy_net_returns,
+    total_return,
+    trade_count,
+    wilson_interval,
+)
+from markets_lab.analysis.nvda.predictors import PREDICTED_UP, Predictor
+from markets_lab.analysis.nvda.validation import WalkForwardConfig, make_folds, walk_forward
+from markets_lab.collectors.nvda_prices import (
+    DEFAULT_CSV_PATH,
+    MARKET_TZ,
+    MIN_ROWS,
+    SYMBOL,
+    PriceDataError,
+    load_csv,
+    validate,
+)
+
+DEFAULT_REPORT_PATH = Path("reports/nvda_backtest.json")
+COST_LEVELS_BPS = (0, 5, 10)
+PRIMARY_COST_BPS = 5
+BUY_AND_HOLD = "always_up"
+
+PredictorFactory = Callable[[], Predictor]
+
+BASELINE_FACTORIES: dict[str, PredictorFactory] = {
+    "always_up": AlwaysUp,
+    "persistence": Persistence,
+    "ma_200": MovingAverageRule,
+}
+
+MODEL_FACTORIES: dict[str, PredictorFactory] = {}
+"""Models are added here one at a time, each after the previous one is measured."""
+
+CAVEATS = (
+    "Research only, not financial advice.",
+    "The backtest is where predictors are compared, so it flatters whichever looks "
+    "best. The live prediction log is the real test.",
+    "Several predictors are compared, so some intervals will exclude zero by chance.",
+    "Accuracy intervals (Wilson) treat sessions as independent.",
+    "Simulated returns assume a flat cost per trade, no slippage or taxes, and cash "
+    "that earns no interest.",
+    "Following always_up is buy-and-hold; it is the return benchmark.",
+)
+
+
+def run_backtest(
+    dataset: Dataset,
+    *,
+    baselines: Mapping[str, PredictorFactory] = BASELINE_FACTORIES,
+    models: Mapping[str, PredictorFactory] = MODEL_FACTORIES,
+    config: WalkForwardConfig | None = None,
+    bootstrap: BootstrapConfig | None = None,
+    generated_at: datetime | None = None,
+) -> dict[str, Any]:
+    """Backtest every baseline and model and return the aggregate report."""
+    config = config or WalkForwardConfig()
+    bootstrap = bootstrap or BootstrapConfig()
+    overlap = set(baselines) & set(models)
+    if overlap:
+        raise ValueError(f"names used for both a baseline and a model: {sorted(overlap)}")
+
+    labelled = dataset.labelled()
+    folds = make_folds(len(labelled), config)
+    calls = {
+        name: walk_forward(labelled, factory, config, folds=folds)
+        for name, factory in {**baselines, **models}.items()
+    }
+    sessions = next(iter(calls.values())).index
+    if not all(frame.index.equals(sessions) for frame in calls.values()):
+        raise ValueError("predictors were not tested on the same sessions")
+    target = labelled.target_up.loc[sessions].to_numpy(dtype="float64")
+    next_return = labelled.next_return.loc[sessions].to_numpy(dtype="float64")
+    n = len(sessions)
+
+    predicted = {name: frame[PREDICTED_UP].to_numpy(dtype=bool) for name, frame in calls.items()}
+    hit = {name: hits(up, target) for name, up in predicted.items()}
+    net = {
+        name: {
+            cost: strategy_net_returns(up, next_return, cost_bps=cost) for cost in COST_LEVELS_BPS
+        }
+        for name, up in predicted.items()
+    }
+
+    predictors: dict[str, Any] = {}
+    for name, up in predicted.items():
+        hit_count = int(hit[name].sum())
+        predictors[name] = {
+            "kind": "baseline" if name in baselines else "model",
+            "sessions": n,
+            "hits": hit_count,
+            "accuracy": _number(hit_count / n),
+            "accuracy_interval": _pair(wilson_interval(hit_count, n, bootstrap.confidence)),
+            "share_called_up": _number(float(up.mean())),
+            "trades": trade_count(up),
+            "returns_by_cost_bps": {
+                str(cost): _return_summary(net[name][cost], n, bootstrap)
+                for cost in COST_LEVELS_BPS
+            },
+        }
+
+    comparisons: list[dict[str, Any]] = []
+    names = list(calls)
+    for name in names:
+        for baseline in baselines:
+            if name == baseline or (
+                name in baselines and names.index(name) < names.index(baseline)
+            ):
+                continue
+            comparisons.append(
+                _compare(name, baseline, hit, net, n, bootstrap),
+            )
+
+    return {
+        "generated_at": (generated_at or datetime.now(tz=UTC)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "symbol": SYMBOL,
+        "data": {
+            "sessions_with_features": len(dataset),
+            "first_feature_session": _date(dataset.features.index[0]),
+            "last_labelled_session": _date(labelled.features.index[-1]),
+            "tested_sessions": n,
+            "first_tested_session": _date(sessions[0]),
+            "last_tested_session": _date(sessions[-1]),
+            "share_of_up_days_tested": _number(float(target.mean())),
+        },
+        "validation": {
+            "scheme": "walk-forward, expanding window",
+            "initial_train_sessions": config.initial_train_sessions,
+            "refit_every_sessions": config.refit_every,
+            "folds": len(folds),
+        },
+        "strategy": "hold the stock when the call is up, cash otherwise",
+        "cost_levels_bps": list(COST_LEVELS_BPS),
+        "primary_cost_bps": PRIMARY_COST_BPS,
+        "intervals": {
+            "confidence": bootstrap.confidence,
+            "accuracy": "Wilson",
+            "returns_and_differences": "paired moving-block bootstrap",
+            "block_length_sessions": bootstrap.block_length,
+            "resamples": bootstrap.n_resamples,
+            "seed": bootstrap.seed,
+        },
+        "predictors": predictors,
+        "comparisons": comparisons,
+        "caveats": list(CAVEATS),
+    }
+
+
+def _return_summary(net: np.ndarray, n: int, bootstrap: BootstrapConfig) -> dict[str, Any]:
+    interval = bootstrap_interval(n, lambda rows: annualised_return(net[rows]), bootstrap)
+    return {
+        "total_return": _number(total_return(net)),
+        "annualised_return": _number(annualised_return(net)),
+        "annualised_return_interval": _pair(interval),
+        "annualised_volatility": _number(annualised_volatility(net)),
+        "sharpe_ratio": _number(sharpe_ratio(net)),
+    }
+
+
+def _compare(
+    name: str,
+    baseline: str,
+    hit: Mapping[str, np.ndarray],
+    net: Mapping[str, Mapping[int, np.ndarray]],
+    n: int,
+    bootstrap: BootstrapConfig,
+) -> dict[str, Any]:
+    ours, theirs = hit[name], hit[baseline]
+    our_net, their_net = net[name][PRIMARY_COST_BPS], net[baseline][PRIMARY_COST_BPS]
+
+    def accuracy_gap(rows: np.ndarray) -> float:
+        return float(ours[rows].mean() - theirs[rows].mean())
+
+    def return_gap(rows: np.ndarray) -> float:
+        return annualised_return(our_net[rows]) - annualised_return(their_net[rows])
+
+    everything = np.arange(n)
+    return {
+        "predictor": name,
+        "baseline": baseline,
+        "accuracy_difference": _number(accuracy_gap(everything)),
+        "accuracy_difference_interval": _pair(bootstrap_interval(n, accuracy_gap, bootstrap)),
+        "annualised_return_difference": _number(return_gap(everything)),
+        "annualised_return_difference_interval": _pair(
+            bootstrap_interval(n, return_gap, bootstrap)
+        ),
+        "cost_bps": PRIMARY_COST_BPS,
+    }
+
+
+def format_report(report: Mapping[str, Any]) -> str:
+    """A plain-text summary of the report for the terminal."""
+    data, validation = report["data"], report["validation"]
+    cost = str(report["primary_cost_bps"])
+    lines = [
+        f"{report['symbol']} walk-forward backtest",
+        f"tested {data['tested_sessions']} sessions, {data['first_tested_session']} to "
+        f"{data['last_tested_session']}, {validation['folds']} folds; "
+        f"{_percent(data['share_of_up_days_tested'])} of tested days were up",
+        "",
+        f"{'predictor':<14}{'accuracy':>9}  {'95% interval':<17}{'called up':>10}"
+        f"{'trades':>8}{'ann. return':>13}  {'95% interval':<19}{'Sharpe':>7}",
+    ]
+    for name, row in report["predictors"].items():
+        returns = row["returns_by_cost_bps"][cost]
+        lines.append(
+            f"{name:<14}{_percent(row['accuracy']):>9}  "
+            f"{_range(row['accuracy_interval']):<17}{_percent(row['share_called_up']):>10}"
+            f"{row['trades']:>8}{_percent(returns['annualised_return']):>13}  "
+            f"{_range(returns['annualised_return_interval']):<19}"
+            f"{_plain(returns['sharpe_ratio']):>7}"
+        )
+    lines += ["", f"differences (returns at {cost} bps per trade), predictor minus baseline:"]
+    for row in report["comparisons"]:
+        accuracy_range = _range(row["accuracy_difference_interval"], points=True)
+        return_range = _range(row["annualised_return_difference_interval"], points=True)
+        lines.append(
+            f"  {row['predictor']} vs {row['baseline']}: accuracy "
+            f"{_points(row['accuracy_difference'])} {accuracy_range}"
+            f", annualised return {_points(row['annualised_return_difference'])} {return_range}"
+        )
+    return "\n".join(lines)
+
+
+def _number(value: float) -> float | None:
+    return None if math.isnan(value) or math.isinf(value) else round(value, 6)
+
+
+def _pair(interval: tuple[float, float]) -> list[float | None]:
+    return [_number(interval[0]), _number(interval[1])]
+
+
+def _date(timestamp: object) -> str:
+    return pd.Timestamp(timestamp).date().isoformat()  # type: ignore[arg-type]
+
+
+def _percent(value: float | None) -> str:
+    return "n/a" if value is None else f"{100 * value:.1f}%"
+
+
+def _points(value: float | None) -> str:
+    return "n/a" if value is None else f"{100 * value:+.1f} pts"
+
+
+def _plain(value: float | None) -> str:
+    return "n/a" if value is None else f"{value:.2f}"
+
+
+def _range(interval: Sequence[float | None], *, points: bool = False) -> str:
+    low, high = interval
+    if low is None or high is None:
+        return "[n/a]"
+    if points:
+        return f"[{100 * low:+.1f}, {100 * high:+.1f}]"
+    return f"[{100 * low:.1f}%, {100 * high:.1f}%]"
+
+
+def write_report(report: Mapping[str, Any], path: Path) -> None:
+    """Write the report as JSON, replacing any existing file in one step."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(json.dumps(report, indent=2, allow_nan=False) + "\n", encoding="utf-8")
+    temporary.replace(path)
+
+
+def _print(line: str) -> None:
+    print(line, flush=True)
+
+
+def main(
+    argv: Sequence[str] | None = None,
+    *,
+    now: Callable[[], datetime] = lambda: datetime.now(tz=MARKET_TZ),
+    report: Callable[[str], None] = _print,
+    min_rows: int = MIN_ROWS,
+) -> int:
+    parser = argparse.ArgumentParser(
+        prog="python -m markets_lab.analysis.nvda.backtest",
+        description="Walk-forward backtest of the baselines and models; writes aggregates only.",
+    )
+    parser.add_argument("--prices", type=Path, default=DEFAULT_CSV_PATH)
+    parser.add_argument("--out", type=Path, default=DEFAULT_REPORT_PATH)
+    parser.add_argument("--resamples", type=int, default=BootstrapConfig().n_resamples)
+    args = parser.parse_args(argv)
+    try:
+        prices = load_csv(args.prices)
+        validate(prices, now=now(), min_rows=min_rows)
+    except FileNotFoundError:
+        report(f"error: {args.prices} not found; run the price fetch first")
+        return 2
+    except PriceDataError as exc:
+        report(f"error: {exc}")
+        return 1
+    result = run_backtest(
+        build_dataset(prices), bootstrap=BootstrapConfig(n_resamples=args.resamples)
+    )
+    write_report(result, args.out)
+    report(format_report(result))
+    report(f"\nwrote {args.out}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
