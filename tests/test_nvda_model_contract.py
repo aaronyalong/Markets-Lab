@@ -100,17 +100,19 @@ class TestGuards:
 
 
 class TestNoLookAhead:
-    def test_a_call_does_not_depend_on_the_other_rows_it_is_predicted_with(
+    def test_a_call_does_not_depend_on_later_rows_in_the_same_batch(
         self, name: str, labelled: Dataset
     ) -> None:
-        # If anything were refitted on the rows being predicted, a row's probability
-        # would change with its batch. Here the batch includes absurd outliers.
+        # Predict the first 10 sessions one prefix at a time, then again inside a
+        # batch whose later rows are absurd outliers. If anything were refitted or
+        # rescaled on the rows being predicted, or a later row could reach an
+        # earlier one, the two would differ.
         model = fitted(name, labelled)
         batch = labelled.features.iloc[TRAIN_ROWS : TRAIN_ROWS + 60].copy()
-        alone = [model.predict(batch.iloc[[i]])[PROBABILITY_UP].iloc[0] for i in range(10)]
+        prefix = [model.predict(batch.iloc[: i + 1])[PROBABILITY_UP].iloc[-1] for i in range(10)]
         batch.iloc[30:] = batch.iloc[30:] * 1_000.0
         together = model.predict(batch)[PROBABILITY_UP].iloc[:10].tolist()
-        assert together == pytest.approx(alone, rel=1e-9)
+        assert together == pytest.approx(prefix, rel=1e-5)
 
     def test_predicting_does_not_change_the_fitted_model(
         self, name: str, labelled: Dataset

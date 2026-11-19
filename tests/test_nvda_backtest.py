@@ -160,7 +160,7 @@ class TestReportContents:
 
     def test_registered_baselines_and_models(self) -> None:
         assert list(BASELINE_FACTORIES) == ["always_up", "persistence", "ma_200"]
-        assert list(MODEL_FACTORIES) == ["logistic", "xgboost"]
+        assert list(MODEL_FACTORIES) == ["logistic", "xgboost", "lstm"]
 
     def test_a_later_model_is_also_compared_with_earlier_models(self, dataset: Dataset) -> None:
         result = run_backtest(
@@ -271,6 +271,7 @@ class TestCommandLine:
             "ma_200",
             "logistic",
             "xgboost",
+            "lstm",
         ]
         assert written["validation"]["initial_train_sessions"] == 1_260
         assert written["intervals"]["resamples"] == 50

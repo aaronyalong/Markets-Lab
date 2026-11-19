@@ -41,6 +41,7 @@ from markets_lab.analysis.nvda.metrics import (
     wilson_interval,
 )
 from markets_lab.analysis.nvda.models.logistic import LogisticRegressionModel
+from markets_lab.analysis.nvda.models.lstm import LSTMModel
 from markets_lab.analysis.nvda.models.xgb import XGBoostModel
 from markets_lab.analysis.nvda.predictors import PREDICTED_UP, PROBABILITY_UP, Predictor
 from markets_lab.analysis.nvda.validation import WalkForwardConfig, make_folds, walk_forward
@@ -70,6 +71,7 @@ BASELINE_FACTORIES: dict[str, PredictorFactory] = {
 MODEL_FACTORIES: dict[str, PredictorFactory] = {
     "logistic": LogisticRegressionModel,
     "xgboost": XGBoostModel,
+    "lstm": LSTMModel,
 }
 """Models are added here one at a time, each after the previous one is measured."""
 

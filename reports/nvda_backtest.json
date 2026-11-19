@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-19T02:44:45Z",
+  "generated_at": "2026-11-19T02:53:54Z",
   "symbol": "NVDA",
   "data": {
     "sessions_with_features": 6800,
@@ -257,6 +257,51 @@
           "sharpe_ratio": 0.633673
         }
       }
+    },
+    "lstm": {
+      "kind": "model",
+      "sessions": 5539,
+      "hits": 2856,
+      "accuracy": 0.515617,
+      "accuracy_interval": [
+        0.502449,
+        0.528762
+      ],
+      "share_called_up": 0.610399,
+      "brier_score": 0.250647,
+      "trades": 1463,
+      "returns_by_cost_bps": {
+        "0": {
+          "total_return": 395.757602,
+          "annualised_return": 0.312869,
+          "annualised_return_interval": [
+            0.140012,
+            0.514527
+          ],
+          "annualised_volatility": 0.349761,
+          "sharpe_ratio": 0.952139
+        },
+        "5": {
+          "total_return": 189.879547,
+          "annualised_return": 0.269885,
+          "annualised_return_interval": [
+            0.102396,
+            0.465738
+          ],
+          "annualised_volatility": 0.349761,
+          "sharpe_ratio": 0.856883
+        },
+        "10": {
+          "total_return": 90.798277,
+          "annualised_return": 0.228288,
+          "annualised_return_interval": [
+            0.065947,
+            0.416333
+          ],
+          "annualised_volatility": 0.349797,
+          "sharpe_ratio": 0.761552
+        }
+      }
     }
   },
   "comparisons": [
@@ -407,6 +452,81 @@
       "annualised_return_difference_interval": [
         -0.168333,
         0.117269
+      ],
+      "cost_bps": 5
+    },
+    {
+      "predictor": "lstm",
+      "reference": "always_up",
+      "accuracy_difference": -0.008666,
+      "accuracy_difference_interval": [
+        -0.023831,
+        0.007222
+      ],
+      "annualised_return_difference": -0.108132,
+      "annualised_return_difference_interval": [
+        -0.300309,
+        0.071958
+      ],
+      "cost_bps": 5
+    },
+    {
+      "predictor": "lstm",
+      "reference": "persistence",
+      "accuracy_difference": 0.028706,
+      "accuracy_difference_interval": [
+        0.010286,
+        0.048204
+      ],
+      "annualised_return_difference": 0.242578,
+      "annualised_return_difference_interval": [
+        0.091608,
+        0.403535
+      ],
+      "cost_bps": 5
+    },
+    {
+      "predictor": "lstm",
+      "reference": "ma_200",
+      "accuracy_difference": -0.007222,
+      "accuracy_difference_interval": [
+        -0.021669,
+        0.007944
+      ],
+      "annualised_return_difference": -0.127303,
+      "annualised_return_difference_interval": [
+        -0.300526,
+        0.027947
+      ],
+      "cost_bps": 5
+    },
+    {
+      "predictor": "lstm",
+      "reference": "logistic",
+      "accuracy_difference": 0.007763,
+      "accuracy_difference_interval": [
+        -0.004152,
+        0.019498
+      ],
+      "annualised_return_difference": 0.020951,
+      "annualised_return_difference_interval": [
+        -0.093447,
+        0.13848
+      ],
+      "cost_bps": 5
+    },
+    {
+      "predictor": "lstm",
+      "reference": "xgboost",
+      "accuracy_difference": 0.009027,
+      "accuracy_difference_interval": [
+        -0.007226,
+        0.024192
+      ],
+      "annualised_return_difference": 0.047114,
+      "annualised_return_difference_interval": [
+        -0.092472,
+        0.188874
       ],
       "cost_bps": 5
     }
