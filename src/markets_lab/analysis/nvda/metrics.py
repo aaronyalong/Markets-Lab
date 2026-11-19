@@ -72,6 +72,23 @@ def hits(predicted_up: np.ndarray, target_up: np.ndarray) -> np.ndarray:
     return predicted == (target == 1.0)
 
 
+def brier_score(probability_up: np.ndarray, target_up: np.ndarray) -> float:
+    """Mean squared gap between the stated probability and what happened (0 or 1).
+
+    Lower is better. Always saying 50% scores 0.25; always saying the true share of
+    up days `s` scores `s * (1 - s)`.
+    """
+    probability = np.asarray(probability_up, dtype="float64")
+    target = np.asarray(target_up, dtype="float64")
+    if probability.shape != target.shape or len(probability) == 0:
+        raise ValueError("probability_up must be non-empty and the same length as target_up")
+    if np.isnan(probability).any() or ((probability < 0) | (probability > 1)).any():
+        raise ValueError("probability_up must be between 0 and 1 with no missing values")
+    if not np.isin(target, (0.0, 1.0)).all():
+        raise ValueError("target_up must be 0 or 1 with no missing values")
+    return float(np.mean((probability - target) ** 2))
+
+
 def strategy_net_returns(
     predicted_up: np.ndarray, next_return: np.ndarray, *, cost_bps: float
 ) -> np.ndarray:

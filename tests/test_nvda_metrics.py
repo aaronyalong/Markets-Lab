@@ -13,6 +13,7 @@ from markets_lab.analysis.nvda.metrics import (
     annualised_volatility,
     block_bootstrap_indices,
     bootstrap_interval,
+    brier_score,
     hits,
     sharpe_ratio,
     strategy_net_returns,
@@ -81,6 +82,37 @@ class TestHits:
     def test_rejects_bad_inputs(self, predicted: np.ndarray, target: np.ndarray) -> None:
         with pytest.raises(ValueError, match="must be"):
             hits(predicted, target)
+
+
+class TestBrierScore:
+    def test_known_values(self) -> None:
+        outcomes = np.array([1.0, 0.0, 1.0, 0.0])
+        assert brier_score(np.array([1.0, 0.0, 1.0, 0.0]), outcomes) == 0.0
+        assert brier_score(np.array([0.0, 1.0, 0.0, 1.0]), outcomes) == 1.0
+        assert brier_score(np.full(4, 0.5), outcomes) == pytest.approx(0.25)
+        assert brier_score(np.array([0.8, 0.2, 0.6, 0.4]), outcomes) == pytest.approx(0.1)
+
+    def test_the_true_share_is_the_best_constant_forecast(self) -> None:
+        outcomes = (np.random.default_rng(0).random(5_000) < 0.524).astype("float64")
+        share = float(outcomes.mean())
+        best = brier_score(np.full(5_000, share), outcomes)
+        assert best == pytest.approx(share * (1 - share))
+        assert best < brier_score(np.full(5_000, 0.5), outcomes)
+        assert best < brier_score(np.full(5_000, share + 0.05), outcomes)
+
+    @pytest.mark.parametrize(
+        ("probability", "outcomes"),
+        [
+            (np.array([0.5]), np.array([1.0, 0.0])),
+            (np.array([]), np.array([])),
+            (np.array([0.5, np.nan]), np.array([1.0, 0.0])),
+            (np.array([0.5, 1.5]), np.array([1.0, 0.0])),
+            (np.array([0.5, 0.5]), np.array([1.0, 0.3])),
+        ],
+    )
+    def test_rejects_bad_inputs(self, probability: np.ndarray, outcomes: np.ndarray) -> None:
+        with pytest.raises(ValueError, match="must be"):
+            brier_score(probability, outcomes)
 
 
 class TestStrategyReturns:

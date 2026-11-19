@@ -32,6 +32,7 @@ from markets_lab.analysis.nvda.metrics import (
     annualised_return,
     annualised_volatility,
     bootstrap_interval,
+    brier_score,
     hits,
     sharpe_ratio,
     strategy_net_returns,
@@ -39,7 +40,8 @@ from markets_lab.analysis.nvda.metrics import (
     trade_count,
     wilson_interval,
 )
-from markets_lab.analysis.nvda.predictors import PREDICTED_UP, Predictor
+from markets_lab.analysis.nvda.models.logistic import LogisticRegressionModel
+from markets_lab.analysis.nvda.predictors import PREDICTED_UP, PROBABILITY_UP, Predictor
 from markets_lab.analysis.nvda.validation import WalkForwardConfig, make_folds, walk_forward
 from markets_lab.collectors.nvda_prices import (
     DEFAULT_CSV_PATH,
@@ -64,7 +66,9 @@ BASELINE_FACTORIES: dict[str, PredictorFactory] = {
     "ma_200": MovingAverageRule,
 }
 
-MODEL_FACTORIES: dict[str, PredictorFactory] = {}
+MODEL_FACTORIES: dict[str, PredictorFactory] = {
+    "logistic": LogisticRegressionModel,
+}
 """Models are added here one at a time, each after the previous one is measured."""
 
 CAVEATS = (
@@ -76,6 +80,8 @@ CAVEATS = (
     "Simulated returns assume a flat cost per trade, no slippage or taxes, and cash "
     "that earns no interest.",
     "Following always_up is buy-and-hold; it is the return benchmark.",
+    "The base-rate Brier score uses the share of up days in the tested period, which "
+    "no forecaster knew in advance, so it is a slightly hard reference.",
 )
 
 
@@ -127,6 +133,7 @@ def run_backtest(
             "accuracy": _number(hit_count / n),
             "accuracy_interval": _pair(wilson_interval(hit_count, n, bootstrap.confidence)),
             "share_called_up": _number(float(up.mean())),
+            "brier_score": _brier(calls[name][PROBABILITY_UP].to_numpy(dtype="float64"), target),
             "trades": trade_count(up),
             "returns_by_cost_bps": {
                 str(cost): _return_summary(net[name][cost], n, bootstrap)
@@ -157,6 +164,7 @@ def run_backtest(
             "first_tested_session": _date(sessions[0]),
             "last_tested_session": _date(sessions[-1]),
             "share_of_up_days_tested": _number(float(target.mean())),
+            "brier_score_of_base_rate": _number(float(target.mean() * (1 - target.mean()))),
         },
         "validation": {
             "scheme": "walk-forward, expanding window",
@@ -190,6 +198,13 @@ def _return_summary(net: np.ndarray, n: int, bootstrap: BootstrapConfig) -> dict
         "annualised_volatility": _number(annualised_volatility(net)),
         "sharpe_ratio": _number(sharpe_ratio(net)),
     }
+
+
+def _brier(probability: np.ndarray, target: np.ndarray) -> float | None:
+    """Brier score, or None for a rule that gives no probabilities."""
+    if np.isnan(probability).all():
+        return None
+    return _number(brier_score(probability, target))
 
 
 def _compare(
@@ -245,6 +260,14 @@ def format_report(report: Mapping[str, Any]) -> str:
             f"{_range(returns['annualised_return_interval']):<19}"
             f"{_plain(returns['sharpe_ratio']):>7}"
         )
+    scored = {n: r["brier_score"] for n, r in report["predictors"].items() if r["brier_score"]}
+    if scored:
+        reference = data["brier_score_of_base_rate"]
+        lines += [
+            "",
+            f"probability quality (Brier score, lower is better; base rate {reference:.4f}):",
+        ]
+        lines += [f"  {name}: {score:.4f}" for name, score in scored.items()]
     lines += ["", f"differences (returns at {cost} bps per trade), predictor minus baseline:"]
     for row in report["comparisons"]:
         accuracy_range = _range(row["accuracy_difference_interval"], points=True)

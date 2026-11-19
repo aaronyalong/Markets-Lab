@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-19T02:12:12Z",
+  "generated_at": "2026-11-19T02:17:09Z",
   "symbol": "NVDA",
   "data": {
     "sessions_with_features": 6800,
@@ -8,7 +8,8 @@
     "tested_sessions": 5539,
     "first_tested_session": "2004-11-10",
     "last_tested_session": "2026-11-16",
-    "share_of_up_days_tested": 0.524282
+    "share_of_up_days_tested": 0.524282,
+    "brier_score_of_base_rate": 0.24941
   },
   "validation": {
     "scheme": "walk-forward, expanding window",
@@ -42,6 +43,7 @@
         0.537413
       ],
       "share_called_up": 1.0,
+      "brier_score": null,
       "trades": 1,
       "returns_by_cost_bps": {
         "0": {
@@ -86,6 +88,7 @@
         0.500078
       ],
       "share_called_up": 0.524282,
+      "brier_score": null,
       "trades": 2842,
       "returns_by_cost_bps": {
         "0": {
@@ -130,6 +133,7 @@
         0.535971
       ],
       "share_called_up": 0.742914,
+      "brier_score": null,
       "trades": 94,
       "returns_by_cost_bps": {
         "0": {
@@ -161,6 +165,51 @@
           ],
           "annualised_volatility": 0.371795,
           "sharpe_ratio": 1.078112
+        }
+      }
+    },
+    "logistic": {
+      "kind": "model",
+      "sessions": 5539,
+      "hits": 2813,
+      "accuracy": 0.507853,
+      "accuracy_interval": [
+        0.494687,
+        0.521009
+      ],
+      "share_called_up": 0.625745,
+      "brier_score": 0.2502,
+      "trades": 1911,
+      "returns_by_cost_bps": {
+        "0": {
+          "total_return": 343.3694,
+          "annualised_return": 0.304438,
+          "annualised_return_interval": [
+            0.124562,
+            0.515454
+          ],
+          "annualised_volatility": 0.371663,
+          "sharpe_ratio": 0.899665
+        },
+        "5": {
+          "total_return": 131.419639,
+          "annualised_return": 0.248934,
+          "annualised_return_interval": [
+            0.076615,
+            0.451759
+          ],
+          "annualised_volatility": 0.371616,
+          "sharpe_ratio": 0.782633
+        },
+        "10": {
+          "total_return": 49.894699,
+          "annualised_return": 0.195766,
+          "annualised_return_interval": [
+            0.030296,
+            0.390875
+          ],
+          "annualised_volatility": 0.371607,
+          "sharpe_ratio": 0.665502
         }
       }
     }
@@ -210,6 +259,51 @@
         0.549274
       ],
       "cost_bps": 5
+    },
+    {
+      "predictor": "logistic",
+      "baseline": "always_up",
+      "accuracy_difference": -0.016429,
+      "accuracy_difference_interval": [
+        -0.030872,
+        -0.001264
+      ],
+      "annualised_return_difference": -0.129084,
+      "annualised_return_difference_interval": [
+        -0.310222,
+        0.033795
+      ],
+      "cost_bps": 5
+    },
+    {
+      "predictor": "logistic",
+      "baseline": "persistence",
+      "accuracy_difference": 0.020942,
+      "accuracy_difference_interval": [
+        0.003787,
+        0.038459
+      ],
+      "annualised_return_difference": 0.221626,
+      "annualised_return_difference_interval": [
+        0.07081,
+        0.376948
+      ],
+      "cost_bps": 5
+    },
+    {
+      "predictor": "logistic",
+      "baseline": "ma_200",
+      "accuracy_difference": -0.014985,
+      "accuracy_difference_interval": [
+        -0.031057,
+        0.000722
+      ],
+      "annualised_return_difference": -0.148254,
+      "annualised_return_difference_interval": [
+        -0.322541,
+        0.024239
+      ],
+      "cost_bps": 5
     }
   ],
   "caveats": [
@@ -218,6 +312,7 @@
     "Several predictors are compared, so some intervals will exclude zero by chance.",
     "Accuracy intervals (Wilson) treat sessions as independent.",
     "Simulated returns assume a flat cost per trade, no slippage or taxes, and cash that earns no interest.",
-    "Following always_up is buy-and-hold; it is the return benchmark."
+    "Following always_up is buy-and-hold; it is the return benchmark.",
+    "The base-rate Brier score uses the share of up days in the tested period, which no forecaster knew in advance, so it is a slightly hard reference."
   ]
 }

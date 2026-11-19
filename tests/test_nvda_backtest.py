@@ -158,9 +158,22 @@ class TestReportContents:
         with pytest.raises(ValueError, match="both a baseline and a model"):
             run_backtest(dataset, models={"always_up": LeastSquaresLearner}, config=CONFIG)
 
-    def test_no_models_are_registered_before_they_are_measured(self) -> None:
+    def test_registered_baselines_and_models(self) -> None:
         assert list(BASELINE_FACTORIES) == ["always_up", "persistence", "ma_200"]
-        assert isinstance(MODEL_FACTORIES, dict)
+        assert list(MODEL_FACTORIES) == ["logistic"]
+
+    def test_probability_quality_is_reported_only_where_there_are_probabilities(
+        self, report: dict[str, Any]
+    ) -> None:
+        predictors = report["predictors"]
+        for name in ("always_up", "persistence", "ma_200"):
+            assert predictors[name]["brier_score"] is None
+        assert 0 < predictors["least_squares"]["brier_score"] < 1
+        share = report["data"]["share_of_up_days_tested"]
+        assert report["data"]["brier_score_of_base_rate"] == pytest.approx(
+            share * (1 - share), abs=1e-6
+        )
+        assert "probability quality (Brier score" in format_report(report)
 
 
 def walk(value: object, path: str = "") -> list[tuple[str, object]]:
@@ -234,7 +247,7 @@ class TestCommandLine:
         )
         assert code == 0
         written = json.loads(out.read_text())
-        assert list(written["predictors"]) == ["always_up", "persistence", "ma_200"]
+        assert list(written["predictors"]) == ["always_up", "persistence", "ma_200", "logistic"]
         assert written["validation"]["initial_train_sessions"] == 1_260
         assert written["intervals"]["resamples"] == 50
         assert lines[-1] == f"\nwrote {out}"
