@@ -1,14 +1,13 @@
 [project]
 name = "markets-lab"
 version = "0.1.0"
-description = "Hobby research on prediction-market calibration and next-day stock direction. Not financial advice."
+description = "Hobby research on markets: next-day stock direction and cited summaries of SEC filings. Not financial advice."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Aaron Yalong" }]
 requires-python = ">=3.12"
 dependencies = [
-    "httpx>=0.28.1",
     "numpy>=2.5.5",
     "pandas>=3.1.1",
     "plotly>=7.1.0",

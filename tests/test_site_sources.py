@@ -1,7 +1,7 @@
 """Checks on the site's source files that do not need Quarto.
 
-They guard the promises the site makes: the disclaimer is on every page, parked
-work shows no data, and internal links point at pages that exist. If the site has
+They guard the promises the site makes: the disclaimer is on every page, work
+that has not started shows no data, and internal links point at pages that exist. If the site has
 been rendered, the built pages are checked for the disclaimer too.
 """
 
@@ -61,31 +61,21 @@ def home_cards() -> list[str]:
     return [card.split("\n:::", 1)[0] for card in grid.split("::: {.lab-card")[1:]]
 
 
-def test_home_has_one_live_card_and_two_coming_soon() -> None:
+def test_home_has_one_live_card_and_one_coming_soon() -> None:
     cards = home_cards()
-    assert len(cards) == 3
+    assert len(cards) == 2
     assert "NVIDIA predictor" in cards[0]
     assert "experiments/nvidia.qmd" in cards[0]
     assert "Coming soon" not in cards[0]
-    for card, title in zip(
-        cards[1:], ("Earnings explainer", "Polymarket favorites study"), strict=True
-    ):
-        assert title in card
-        assert "Coming soon" in card
-        assert ".coming-soon" in card.splitlines()[0]
-        assert ".qmd" not in card, "a coming-soon card must not link anywhere"
+    assert "Earnings explainer" in cards[1]
+    assert "Coming soon" in cards[1]
+    assert ".coming-soon" in cards[1].splitlines()[0]
+    assert ".qmd" not in cards[1], "a coming-soon card must not link anywhere"
 
 
-def test_parked_work_shows_no_numbers() -> None:
-    # No Polymarket result may be published before the data-terms question is
-    # answered. The only digits allowed in that card are in "15-minute".
-    polymarket = home_cards()[2].replace("15-minute", "")
-    assert not re.search(r"\d", polymarket)
-    for page in PAGES:
-        text = page.read_text()
-        for line in text.splitlines():
-            if "polymarket" in line.lower():
-                assert "%" not in line, f"{page.name}: a Polymarket line contains a percentage"
+def test_work_that_has_not_started_shows_no_numbers() -> None:
+    # A coming-soon card describes a plan. It must not look like it has results.
+    assert not re.search(r"\d", home_cards()[1])
 
 
 def test_no_page_uses_the_language_of_advice() -> None:

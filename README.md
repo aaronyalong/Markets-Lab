@@ -17,7 +17,6 @@ Work in progress. Nothing is published yet and there are no results.
 |---|---|
 | NVIDIA next-day direction experiment | In progress |
 | Earnings explainer (cited summaries of SEC filings) | Planned, not started |
-| Polymarket favorites study | Parked; data collection code exists, no analysis |
 
 ## What it will contain
 
@@ -43,13 +42,6 @@ Plain-English summaries of company 10-Q and 10-K filings from SEC EDGAR, where
 every sentence cites its source passage and every extracted figure is checked
 against the filing's XBRL data.
 
-### Polymarket favorites study (parked)
-
-In 15-minute crypto Up/Down prediction markets, when one side is priced at 80¢ or
-more at 12 minutes 30 seconds into the window, does it win more often than its price
-implies once fees and spread are counted? A read-only backfill of public market data
-exists under `src/markets_lab/collectors/polymarket/`. No analysis has been done.
-
 ## Data and publishing rules
 
 - Raw price and market data stays on the machine that collected it and is
@@ -59,23 +51,11 @@ exists under `src/markets_lab/collectors/polymarket/`. No analysis has been done
   with intervals).
 - Test fixtures are synthetic. No real market data is stored in this repository.
 
-### Launch blocker for Polymarket results
-
-No Polymarket results are published until this is resolved. It does not block the
-rest of the site, which can go live with the Polymarket study shown as "Coming
-soon" and no data.
-
-- [ ] **Data terms.** The Polymarket US participant agreement says market data "may
-      not be redistributed except as PMUS expressly permits". Ask
-      data@polymarket.us whether publishing aggregated statistics (win rates,
-      calibration curves, confidence intervals) is permitted, and record the answer
-      here. Raw quotes stay local and gitignored regardless of the answer.
-
 ## Repository layout
 
 ```
 src/markets_lab/
-  collectors/   data fetching (polymarket/ is the parked backfill)
+  collectors/   data fetching (daily NVDA prices)
   analysis/     features, validation, and models
 tests/          pytest suite
 data/           raw local data (gitignored)

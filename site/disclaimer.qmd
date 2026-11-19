@@ -34,7 +34,7 @@ any kind.
 ## No affiliation
 
 This site is not affiliated with or endorsed by NVIDIA, TradingView, Yahoo, the
-U.S. Securities and Exchange Commission, Polymarket, or any company mentioned.
+U.S. Securities and Exchange Commission, or any company mentioned.
 Names are used only to identify what is being studied.
 
 ## Code

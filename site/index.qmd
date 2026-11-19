@@ -162,18 +162,6 @@ own data.
 Not started yet.
 :::
 
-::: {.lab-card .coming-soon}
-`<i class="bi bi-bullseye card-icon"></i>`{=html}
-[Coming soon]{.tag}
-
-### Polymarket favorites study
-
-In 15-minute crypto prediction markets, do heavy favorites win as often as their
-price implies once fees are counted?
-
-No results yet.
-:::
-
 :::
 
 Every experiment follows the rules on the [Method](method.qmd) page.
