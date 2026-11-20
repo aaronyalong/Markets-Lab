@@ -254,9 +254,14 @@ def fetch_newsroom() -> list[NewsItem]:
     return parse_newsroom(_get(NEWSROOM_URL, user_agent=DEFAULT_USER_AGENT))
 
 
-def fetch_edgar() -> list[NewsItem]:
+def sec_get(url: str) -> str:
+    """Fetch one SEC page, naming the client the way SEC asks automated ones to."""
     user_agent = os.environ.get("SEC_USER_AGENT", "").strip() or DEFAULT_USER_AGENT
-    return parse_edgar(_get(EDGAR_URL, user_agent=user_agent))
+    return _get(url, user_agent=user_agent)
+
+
+def fetch_edgar() -> list[NewsItem]:
+    return parse_edgar(sec_get(EDGAR_URL))
 
 
 def fetch_yahoo() -> list[NewsItem]:
