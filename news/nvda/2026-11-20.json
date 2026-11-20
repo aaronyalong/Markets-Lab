@@ -1,0 +1,35 @@
+{
+  "collected_at": "2026-11-20T19:02:08Z",
+  "window_hours": 24,
+  "failed_sources": [],
+  "items": [
+    {
+      "source": "yahoo_finance",
+      "publisher": "Yahoo Finance Video",
+      "title": "Nvidia's troubles mount as China chip sales face scrutiny",
+      "url": "https://finance.yahoo.com/video/nvidias-troubles-mount-as-china-chip-sales-face-scrutiny-151642511.html",
+      "published_at": "2026-11-20T15:16:42Z"
+    },
+    {
+      "source": "yahoo_finance",
+      "publisher": "Yahoo Finance",
+      "title": "Broadcom sinks 10%, Nvidia and AMD extend declines as the AI trade melts down",
+      "url": "https://finance.yahoo.com/markets/article/nvidia-amd-and-broadcom-lead-chip-stocks-lower-133658985.html",
+      "published_at": "2026-11-20T13:36:58Z"
+    },
+    {
+      "source": "nvidia_newsroom",
+      "publisher": "NVIDIA Newsroom",
+      "title": "NVIDIA Announces Upcoming Event for Financial Community",
+      "url": "https://nvidianews.nvidia.com/news/nvidia-announces-upcoming-event-for-financial-community-6929322",
+      "published_at": "2026-11-19T22:00:00Z"
+    },
+    {
+      "source": "nvidia_newsroom",
+      "publisher": "NVIDIA Newsroom",
+      "title": "NVIDIA and Microsoft Expand Accelerated Computing From Azure to Windows PCs",
+      "url": "https://blogs.nvidia.com/blog/microsoft-ignite-accelerated-computing-azure-windows-pcs/",
+      "published_at": "2026-11-19T20:00:15Z"
+    }
+  ]
+}
