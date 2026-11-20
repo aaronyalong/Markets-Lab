@@ -70,7 +70,7 @@ against the filing's XBRL data.
 
 ```
 src/markets_lab/
-  collectors/   data fetching (daily NVDA prices)
+  collectors/   data fetching (daily NVDA prices, market indices, headlines)
   analysis/     features, validation, and models
 tests/          pytest suite
 data/           raw local data (gitignored)

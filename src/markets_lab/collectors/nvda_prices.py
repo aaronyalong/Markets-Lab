@@ -139,7 +139,7 @@ def split_complete(
 
     A row dated after today raises, because it cannot be real.
     """
-    today, clock = _market_date_and_time(now)
+    today, clock = market_date_and_time(now)
     dropped: list[DroppedBar] = []
     if len(prices) and prices.index[-1].date() > today:
         raise PriceDataError(f"row dated {prices.index[-1].date()} is in the future")
@@ -208,7 +208,7 @@ def load_csv(path: Path) -> pd.DataFrame:
     return frame[list(COLUMNS)]
 
 
-def _market_date_and_time(now: datetime) -> tuple[date, time]:
+def market_date_and_time(now: datetime) -> tuple[date, time]:
     if now.tzinfo is None:
         raise ValueError("now must be timezone-aware")
     local = now.astimezone(MARKET_TZ)
@@ -216,7 +216,7 @@ def _market_date_and_time(now: datetime) -> tuple[date, time]:
 
 
 def _problems(prices: pd.DataFrame, *, now: datetime, min_rows: int) -> list[str]:
-    today, _ = _market_date_and_time(now)
+    today, _ = market_date_and_time(now)
     if list(prices.columns) != list(COLUMNS):
         return [f"columns are {list(prices.columns)}, expected {list(COLUMNS)}"]
     if len(prices) < min_rows:
