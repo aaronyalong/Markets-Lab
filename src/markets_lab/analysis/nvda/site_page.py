@@ -55,6 +55,7 @@ DISPLAY_NAMES = {
     "logistic": "Logistic regression",
     "xgboost": "XGBoost",
     "lstm": "LSTM",
+    "logistic_ctx": "Logistic regression + context",
 }
 DESCRIPTIONS = {
     "always_up": "Calls up every day. Following it is buy-and-hold.",
@@ -63,6 +64,7 @@ DESCRIPTIONS = {
     "logistic": "A weighted sum of the features.",
     "xgboost": "Boosted decision trees on the features.",
     "lstm": "A neural network reading the last 20 sessions.",
+    "logistic_ctx": "The same weighted sum, also given market indices, the VIX and results dates.",
 }
 BASELINE_NAMES = frozenset(b.name for b in default_baselines())
 

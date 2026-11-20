@@ -11,8 +11,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from context_frames import make_context, make_publications
 from markets_lab.analysis.nvda.backtest import (
     BASELINE_FACTORIES,
+    CONTEXT_MODEL_FACTORIES,
     COST_LEVELS_BPS,
     MODEL_FACTORIES,
     format_report,
@@ -20,9 +22,12 @@ from markets_lab.analysis.nvda.backtest import (
     run_backtest,
     write_report,
 )
+from markets_lab.analysis.nvda.context_features import build_context_dataset
 from markets_lab.analysis.nvda.features import Dataset, build_dataset
 from markets_lab.analysis.nvda.metrics import BootstrapConfig
+from markets_lab.analysis.nvda.models.context import LogisticContextModel
 from markets_lab.analysis.nvda.validation import WalkForwardConfig
+from markets_lab.collectors.nvda_earnings import save_json
 from markets_lab.collectors.nvda_prices import save_csv
 from nvda_test_predictors import LeastSquaresLearner
 from price_frames import at, make_prices
@@ -48,6 +53,26 @@ def report(dataset: Dataset) -> dict[str, Any]:
     return run_backtest(
         dataset,
         models={"least_squares": LeastSquaresLearner},
+        config=CONFIG,
+        bootstrap=QUICK,
+        generated_at=WHEN,
+    )
+
+
+@pytest.fixture(scope="module")
+def extended(prices: pd.DataFrame) -> Dataset:
+    """The same sessions with the market context and results columns added."""
+    return build_context_dataset(
+        prices, make_context(ROWS), make_publications(), as_of=at("2030-03-14 22:30")
+    )
+
+
+@pytest.fixture(scope="module")
+def both(extended: Dataset) -> dict[str, Any]:
+    return run_backtest(
+        extended,
+        models={"least_squares": LeastSquaresLearner},
+        context_models={"least_squares_ctx": LeastSquaresLearner},
         config=CONFIG,
         bootstrap=QUICK,
         generated_at=WHEN,
@@ -161,6 +186,7 @@ class TestReportContents:
     def test_registered_baselines_and_models(self) -> None:
         assert list(BASELINE_FACTORIES) == ["always_up", "persistence", "ma_200"]
         assert list(MODEL_FACTORIES) == ["logistic", "xgboost", "lstm"]
+        assert list(CONTEXT_MODEL_FACTORIES) == ["logistic_ctx"]
 
     def test_a_later_model_is_also_compared_with_earlier_models(self, dataset: Dataset) -> None:
         result = run_backtest(
@@ -201,6 +227,74 @@ def walk(value: object, path: str = "") -> list[tuple[str, object]]:
     if isinstance(value, list):
         return [(f"{path}[]", value)] + [leaf for v in value for leaf in walk(v, f"{path}[]")]
     return [(path, value)]
+
+
+class TestContextModels:
+    """Models on the wider inputs are tested beside the others, on the same sessions."""
+
+    def test_extra_columns_change_nothing_for_the_baselines_and_technical_models(
+        self, report: dict[str, Any], both: dict[str, Any]
+    ) -> None:
+        # The first report was made from the technical dataset alone. Every row
+        # in it must come out the same from the dataset with the extra columns.
+        for name, row in report["predictors"].items():
+            assert both["predictors"][name] == row
+        assert both["data"] == report["data"]
+        assert both["validation"] == report["validation"]
+
+    def test_a_context_model_is_scored_on_the_same_sessions_and_says_what_it_saw(
+        self, both: dict[str, Any]
+    ) -> None:
+        rows = both["predictors"]
+        assert list(rows)[-1] == "least_squares_ctx"
+        assert rows["least_squares_ctx"]["sessions"] == both["data"]["tested_sessions"]
+        assert rows["least_squares_ctx"]["kind"] == "model"
+        assert rows["least_squares_ctx"]["inputs"] == "technical, market context and results dates"
+        assert {rows[name]["inputs"] for name in list(rows)[:-1]} == {"technical"}
+
+    def test_the_wider_inputs_reach_the_context_model(self, both: dict[str, Any]) -> None:
+        rows = both["predictors"]
+        assert rows["least_squares_ctx"]["hits"] != rows["least_squares"]["hits"] or (
+            rows["least_squares_ctx"]["brier_score"] != rows["least_squares"]["brier_score"]
+        )
+
+    def test_a_context_model_is_compared_with_everything_before_it_including_its_twin(
+        self, both: dict[str, Any]
+    ) -> None:
+        references = [
+            row["reference"]
+            for row in both["comparisons"]
+            if row["predictor"] == "least_squares_ctx"
+        ]
+        assert references == ["always_up", "persistence", "ma_200", "least_squares"]
+
+    def test_a_context_model_needs_the_context_columns(self, dataset: Dataset) -> None:
+        with pytest.raises(ValueError, match="the dataset has no columns"):
+            run_backtest(
+                dataset, context_models={"least_squares_ctx": LeastSquaresLearner}, config=CONFIG
+            )
+
+    def test_a_name_cannot_be_both_a_model_and_a_context_model(self, extended: Dataset) -> None:
+        with pytest.raises(ValueError, match="both a model and a context model"):
+            run_backtest(
+                extended,
+                models={"least_squares": LeastSquaresLearner},
+                context_models={"least_squares": LeastSquaresLearner},
+                config=CONFIG,
+            )
+
+    def test_the_registered_context_model_refuses_the_technical_columns_alone(
+        self, dataset: Dataset, extended: Dataset
+    ) -> None:
+        # Otherwise it would quietly be a copy of its twin.
+        known = dataset.labelled()
+        with pytest.raises(ValueError, match="needs the technical, context and results columns"):
+            LogisticContextModel().fit(known.features, known.target_up)
+        wide = extended.labelled()
+        model = LogisticContextModel()
+        model.fit(wide.features, wide.target_up)
+        assert model.name == "logistic_ctx"
+        assert len(model.coefficients()) == wide.features.shape[1]
 
 
 class TestReportHoldsAggregatesOnly:
@@ -253,12 +347,28 @@ class TestOutput:
 
 
 class TestCommandLine:
-    def test_runs_from_a_price_file_and_writes_the_report(self, tmp_path: Path) -> None:
-        prices_path, out = tmp_path / "prices.csv", tmp_path / "out" / "report.json"
+    def inputs(self, tmp_path: Path, *, context_rows: int = 1_700) -> list[str]:
+        """Made-up price, context and results files, as command-line arguments."""
+        prices_path = tmp_path / "prices.csv"
+        context_path = tmp_path / "context.csv"
+        results_path = tmp_path / "results.json"
         save_csv(make_prices(rows=1_700), prices_path)
+        save_csv(make_context(1_700).iloc[:context_rows], context_path)
+        save_json(make_publications(), results_path)
+        return [
+            "--prices",
+            str(prices_path),
+            "--context",
+            str(context_path),
+            "--results",
+            str(results_path),
+        ]
+
+    def test_runs_from_the_data_files_and_writes_the_report(self, tmp_path: Path) -> None:
+        out = tmp_path / "out" / "report.json"
         lines: list[str] = []
         code = main(
-            ["--prices", str(prices_path), "--out", str(out), "--resamples", "50"],
+            [*self.inputs(tmp_path), "--out", str(out), "--resamples", "50"],
             now=lambda: at("2030-03-14 20:00"),
             report=lines.append,
             min_rows=1_000,
@@ -272,27 +382,48 @@ class TestCommandLine:
             "logistic",
             "xgboost",
             "lstm",
+            "logistic_ctx",
         ]
+        assert written["predictors"]["logistic"]["inputs"] == "technical"
+        assert written["predictors"]["logistic_ctx"]["inputs"].startswith("technical, market")
         assert written["validation"]["initial_train_sessions"] == 1_260
         assert written["intervals"]["resamples"] == 50
         assert lines[-1] == f"\nwrote {out}"
 
-    def test_missing_price_file(self, tmp_path: Path) -> None:
+    @pytest.mark.parametrize(
+        ("option", "what"),
+        [("--prices", "price"), ("--context", "market context"), ("--results", "results dates")],
+    )
+    def test_a_missing_data_file_names_the_fetch_to_run(
+        self, tmp_path: Path, option: str, what: str
+    ) -> None:
+        arguments = self.inputs(tmp_path)
+        arguments[arguments.index(option) + 1] = str(tmp_path / "nope")
         lines: list[str] = []
-        code = main(["--prices", str(tmp_path / "nope.csv")], report=lines.append)
+        code = main(arguments, report=lines.append)
         assert code == 2
-        assert "run the price fetch first" in lines[0]
+        assert f"run the {what} fetch first" in lines[0]
 
-    def test_stale_or_invalid_prices_are_refused(self, tmp_path: Path) -> None:
-        prices_path, out = tmp_path / "prices.csv", tmp_path / "report.json"
-        save_csv(make_prices(rows=1_700), prices_path)
+    def run_refused(self, tmp_path: Path, when: str, **kwargs: int) -> list[str]:
+        out = tmp_path / "report.json"
         lines: list[str] = []
         code = main(
-            ["--prices", str(prices_path), "--out", str(out)],
-            now=lambda: at("2030-04-20 20:00"),
+            [*self.inputs(tmp_path, **kwargs), "--out", str(out)],
+            now=lambda: at(when),
             report=lines.append,
             min_rows=1_000,
         )
         assert code == 1
-        assert "stale" in lines[0]
         assert not out.exists()
+        return lines
+
+    def test_stale_or_invalid_prices_are_refused(self, tmp_path: Path) -> None:
+        assert "stale" in self.run_refused(tmp_path, "2030-04-20 20:00")[0]
+
+    def test_context_that_lacks_the_latest_session_is_refused(self, tmp_path: Path) -> None:
+        lines = self.run_refused(tmp_path, "2030-03-14 20:00", context_rows=1_699)
+        assert "market context has no row for 1 sessions" in lines[0]
+
+    def test_a_run_before_the_last_sessions_cut_off_is_refused(self, tmp_path: Path) -> None:
+        lines = self.run_refused(tmp_path, "2030-03-14 17:30")
+        assert "too early for a call based on 2030-03-14" in lines[0]

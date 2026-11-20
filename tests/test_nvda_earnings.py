@@ -14,6 +14,8 @@ from typing import Any
 
 import pytest
 
+from context_frames import FIRST_FILING as FIRST
+from context_frames import make_publications
 from markets_lab.collectors.nvda_earnings import (
     SUBMISSIONS_BASE,
     EarningsDataError,
@@ -33,20 +35,7 @@ from markets_lab.collectors.nvda_earnings import (
 from markets_lab.collectors.nvda_news import EDGAR_URL
 
 NOW = datetime(2030, 3, 15, 12, 0, tzinfo=UTC)
-FIRST = datetime(2003, 8, 7, 20, 30, tzinfo=UTC)
 OLDER_PAGE = "CIK0001045810-submissions-001.json"
-
-
-def make_publications(count: int = 107) -> list[ResultsPublication]:
-    """Made-up quarterly results filings, 91 days apart, the last shortly before NOW."""
-    return [
-        ResultsPublication(
-            FIRST + timedelta(days=91 * number),
-            f"0000000000-{(3 + number // 4) % 100:02d}-{number:06d}",
-            ("12",) if number < 4 else ("2.02", "9.01"),
-        )
-        for number in range(count)
-    ]
 
 
 def sec_time(moment: datetime) -> str:

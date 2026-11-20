@@ -5,9 +5,15 @@ scored on exactly the same sessions. The report holds aggregates only: counts,
 accuracies, summary returns and intervals. It contains no prices and no per-day
 series, so it is safe to commit and publish.
 
-Run it from the repository root, after fetching prices:
+Models come in two groups. The first sees the technical columns only. The second
+(the "context" models) also sees the market context and results-date columns. Both
+are tested on the same sessions, so a context model can be compared with its twin.
+
+Run it from the repository root, after fetching the data:
 
     uv run python -m markets_lab.collectors.nvda_prices
+    uv run python -m markets_lab.collectors.market_context
+    uv run python -m markets_lab.collectors.nvda_earnings
     uv run python -m markets_lab.analysis.nvda.backtest
 """
 
@@ -26,7 +32,12 @@ import numpy as np
 import pandas as pd
 
 from markets_lab.analysis.nvda.baselines import AlwaysUp, MovingAverageRule, Persistence
-from markets_lab.analysis.nvda.features import Dataset, build_dataset
+from markets_lab.analysis.nvda.context_features import (
+    EXTENDED_FEATURE_COLUMNS,
+    CallTooEarlyError,
+    build_context_dataset,
+)
+from markets_lab.analysis.nvda.features import FEATURE_COLUMNS, Dataset
 from markets_lab.analysis.nvda.metrics import (
     BootstrapConfig,
     annualised_return,
@@ -40,11 +51,13 @@ from markets_lab.analysis.nvda.metrics import (
     trade_count,
     wilson_interval,
 )
+from markets_lab.analysis.nvda.models.context import LogisticContextModel
 from markets_lab.analysis.nvda.models.logistic import LogisticRegressionModel
 from markets_lab.analysis.nvda.models.lstm import LSTMModel
 from markets_lab.analysis.nvda.models.xgb import XGBoostModel
 from markets_lab.analysis.nvda.predictors import PREDICTED_UP, PROBABILITY_UP, Predictor
 from markets_lab.analysis.nvda.validation import WalkForwardConfig, make_folds, walk_forward
+from markets_lab.collectors import market_context, nvda_earnings
 from markets_lab.collectors.nvda_prices import (
     DEFAULT_CSV_PATH,
     MARKET_TZ,
@@ -75,6 +88,14 @@ MODEL_FACTORIES: dict[str, PredictorFactory] = {
 }
 """Models are added here one at a time, each after the previous one is measured."""
 
+CONTEXT_MODEL_FACTORIES: dict[str, PredictorFactory] = {
+    "logistic_ctx": LogisticContextModel,
+}
+"""The same models on the wider inputs, also added one at a time."""
+
+TECHNICAL_INPUTS = "technical"
+CONTEXT_INPUTS = "technical, market context and results dates"
+
 CAVEATS = (
     "Research only, not financial advice.",
     "The backtest is where predictors are compared, so it flatters whichever looks "
@@ -94,23 +115,42 @@ def run_backtest(
     *,
     baselines: Mapping[str, PredictorFactory] = BASELINE_FACTORIES,
     models: Mapping[str, PredictorFactory] = MODEL_FACTORIES,
+    context_models: Mapping[str, PredictorFactory] | None = None,
     config: WalkForwardConfig | None = None,
     bootstrap: BootstrapConfig | None = None,
     generated_at: datetime | None = None,
 ) -> dict[str, Any]:
-    """Backtest every baseline and model and return the aggregate report."""
+    """Backtest every baseline and model and return the aggregate report.
+
+    Baselines and `models` are given the technical columns only, whatever else the
+    dataset holds. `context_models` are given every column, and the dataset must
+    then carry the context and results columns (see `build_context_dataset`).
+    """
     config = config or WalkForwardConfig()
     bootstrap = bootstrap or BootstrapConfig()
+    context_models = context_models or {}
     overlap = set(baselines) & set(models)
     if overlap:
         raise ValueError(f"names used for both a baseline and a model: {sorted(overlap)}")
+    overlap = (set(baselines) | set(models)) & set(context_models)
+    if overlap:
+        raise ValueError(f"names used for both a model and a context model: {sorted(overlap)}")
 
     labelled = dataset.labelled()
     folds = make_folds(len(labelled), config)
+    technical = _with_columns(labelled, FEATURE_COLUMNS)
     calls = {
-        name: walk_forward(labelled, factory, config, folds=folds)
+        name: walk_forward(technical, factory, config, folds=folds)
         for name, factory in {**baselines, **models}.items()
     }
+    if context_models:
+        extended = _with_columns(labelled, EXTENDED_FEATURE_COLUMNS)
+        calls.update(
+            {
+                name: walk_forward(extended, factory, config, folds=folds)
+                for name, factory in context_models.items()
+            }
+        )
     sessions = next(iter(calls.values())).index
     if not all(frame.index.equals(sessions) for frame in calls.values()):
         raise ValueError("predictors were not tested on the same sessions")
@@ -132,6 +172,7 @@ def run_backtest(
         hit_count = int(hit[name].sum())
         predictors[name] = {
             "kind": "baseline" if name in baselines else "model",
+            "inputs": CONTEXT_INPUTS if name in context_models else TECHNICAL_INPUTS,
             "sessions": n,
             "hits": hit_count,
             "accuracy": _number(hit_count / n),
@@ -188,6 +229,14 @@ def run_backtest(
         "comparisons": comparisons,
         "caveats": list(CAVEATS),
     }
+
+
+def _with_columns(dataset: Dataset, columns: Sequence[str]) -> Dataset:
+    """The same sessions and outcomes with exactly these feature columns."""
+    missing = [name for name in columns if name not in dataset.features.columns]
+    if missing:
+        raise ValueError(f"the dataset has no columns {missing[:5]}")
+    return Dataset(dataset.features[list(columns)], dataset.target_up, dataset.next_return)
 
 
 def _return_summary(net: np.ndarray, n: int, bootstrap: BootstrapConfig) -> dict[str, Any]:
@@ -338,20 +387,35 @@ def main(
         description="Walk-forward backtest of the baselines and models; writes aggregates only.",
     )
     parser.add_argument("--prices", type=Path, default=DEFAULT_CSV_PATH)
+    parser.add_argument("--context", type=Path, default=market_context.DEFAULT_CSV_PATH)
+    parser.add_argument("--results", type=Path, default=nvda_earnings.DEFAULT_JSON_PATH)
     parser.add_argument("--out", type=Path, default=DEFAULT_REPORT_PATH)
     parser.add_argument("--resamples", type=int, default=BootstrapConfig().n_resamples)
     args = parser.parse_args(argv)
+    moment = now()
+    for path, what in (
+        (args.prices, "price"),
+        (args.context, "market context"),
+        (args.results, "results dates"),
+    ):
+        if not path.exists():
+            report(f"error: {path} not found; run the {what} fetch first")
+            return 2
     try:
         prices = load_csv(args.prices)
-        validate(prices, now=now(), min_rows=min_rows)
-    except FileNotFoundError:
-        report(f"error: {args.prices} not found; run the price fetch first")
-        return 2
-    except PriceDataError as exc:
+        validate(prices, now=moment, min_rows=min_rows)
+        context = market_context.load_csv(args.context)
+        market_context.validate(context, now=moment, min_rows=min_rows)
+        publications = nvda_earnings.load_json(args.results)
+        nvda_earnings.validate(publications, now=moment)
+        dataset = build_context_dataset(prices, context, publications, as_of=moment)
+    except (PriceDataError, nvda_earnings.EarningsDataError, CallTooEarlyError) as exc:
         report(f"error: {exc}")
         return 1
     result = run_backtest(
-        build_dataset(prices), bootstrap=BootstrapConfig(n_resamples=args.resamples)
+        dataset,
+        context_models=CONTEXT_MODEL_FACTORIES,
+        bootstrap=BootstrapConfig(n_resamples=args.resamples),
     )
     write_report(result, args.out)
     report(format_report(result))

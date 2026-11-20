@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from context_frames import make_context
 from markets_lab.analysis.nvda.context_features import (
     CONTEXT_COLUMNS,
     EXTENDED_FEATURE_COLUMNS,
@@ -34,13 +35,6 @@ from price_frames import at, make_prices
 
 ROWS = 300
 LATE_EVENING = at("2030-03-14 22:30")  # the job's earliest run after the last session
-
-
-def make_context(rows: int = ROWS) -> pd.DataFrame:
-    """Made-up index closes on the same sessions as `make_prices(rows)`."""
-    return pd.DataFrame(
-        {name: make_prices(rows, seed=100 + number)["close"] for number, name in enumerate(SERIES)}
-    )
 
 
 def filing(when: str, number: int = 0) -> ResultsPublication:

@@ -1,15 +1,15 @@
 {
-  "generated_at": "2026-11-19T02:53:54Z",
+  "generated_at": "2026-11-20T08:39:18Z",
   "symbol": "NVDA",
   "data": {
-    "sessions_with_features": 6800,
+    "sessions_with_features": 6802,
     "first_feature_session": "1999-11-04",
-    "last_labelled_session": "2026-11-16",
-    "tested_sessions": 5539,
+    "last_labelled_session": "2026-11-18",
+    "tested_sessions": 5541,
     "first_tested_session": "2004-11-10",
-    "last_tested_session": "2026-11-16",
-    "share_of_up_days_tested": 0.524282,
-    "brier_score_of_base_rate": 0.24941
+    "last_tested_session": "2026-11-18",
+    "share_of_up_days_tested": 0.524093,
+    "brier_score_of_base_rate": 0.24942
   },
   "validation": {
     "scheme": "walk-forward, expanding window",
@@ -35,271 +35,323 @@
   "predictors": {
     "always_up": {
       "kind": "baseline",
-      "sessions": 5539,
+      "inputs": "technical",
+      "sessions": 5541,
       "hits": 2904,
-      "accuracy": 0.524282,
+      "accuracy": 0.524093,
       "accuracy_interval": [
-        0.511118,
-        0.537413
+        0.510931,
+        0.537222
       ],
       "share_called_up": 1.0,
       "brier_score": null,
       "trades": 1,
       "returns_by_cost_bps": {
         "0": {
-          "total_return": 1149.957829,
-          "annualised_return": 0.378049,
+          "total_return": 1079.772097,
+          "annualised_return": 0.373952,
           "annualised_return_interval": [
-            0.130177,
-            0.662691
+            0.124152,
+            0.655888
           ],
-          "annualised_volatility": 0.482537,
-          "sharpe_ratio": 0.906037
+          "annualised_volatility": 0.482551,
+          "sharpe_ratio": 0.899847
         },
         "5": {
-          "total_return": 1149.38235,
-          "annualised_return": 0.378018,
+          "total_return": 1079.231711,
+          "annualised_return": 0.373921,
           "annualised_return_interval": [
-            0.130176,
-            0.66269
+            0.1241,
+            0.65585
           ],
-          "annualised_volatility": 0.482536,
-          "sharpe_ratio": 0.905991
+          "annualised_volatility": 0.48255,
+          "sharpe_ratio": 0.8998
         },
         "10": {
-          "total_return": 1148.806871,
-          "annualised_return": 0.377986,
+          "total_return": 1078.691325,
+          "annualised_return": 0.37389,
           "annualised_return_interval": [
-            0.130175,
-            0.662688
+            0.124047,
+            0.655812
           ],
-          "annualised_volatility": 0.482536,
-          "sharpe_ratio": 0.905944
+          "annualised_volatility": 0.48255,
+          "sharpe_ratio": 0.899754
         }
       }
     },
     "persistence": {
       "kind": "baseline",
-      "sessions": 5539,
-      "hits": 2697,
-      "accuracy": 0.486911,
+      "inputs": "technical",
+      "sessions": 5541,
+      "hits": 2699,
+      "accuracy": 0.487096,
       "accuracy_interval": [
-        0.473762,
-        0.500078
+        0.473949,
+        0.500261
       ],
-      "share_called_up": 0.524282,
+      "share_called_up": 0.524093,
       "brier_score": null,
       "trades": 2842,
       "returns_by_cost_bps": {
         "0": {
-          "total_return": 6.489704,
-          "annualised_return": 0.095934,
+          "total_return": 6.489626,
+          "annualised_return": 0.095897,
           "annualised_return_interval": [
-            -0.044581,
-            0.245346
+            -0.040297,
+            0.244624
           ],
-          "annualised_volatility": 0.32511,
-          "sharpe_ratio": 0.444616
+          "annualised_volatility": 0.325052,
+          "sharpe_ratio": 0.444534
         },
         "5": {
-          "total_return": 0.807914,
-          "annualised_return": 0.027307,
+          "total_return": 0.807896,
+          "annualised_return": 0.027297,
           "annualised_return_interval": [
-            -0.103445,
-            0.167887
+            -0.100851,
+            0.166482
           ],
-          "annualised_volatility": 0.325131,
-          "sharpe_ratio": 0.245717
+          "annualised_volatility": 0.325073,
+          "sharpe_ratio": 0.245672
         },
         "10": {
-          "total_return": -0.563904,
-          "annualised_return": -0.037053,
+          "total_return": -0.563908,
+          "annualised_return": -0.03704,
           "annualised_return_interval": [
-            -0.159792,
-            0.095895
+            -0.157872,
+            0.095963
           ],
-          "annualised_volatility": 0.3252,
-          "sharpe_ratio": 0.046838
+          "annualised_volatility": 0.325142,
+          "sharpe_ratio": 0.046828
         }
       }
     },
     "ma_200": {
       "kind": "baseline",
-      "sessions": 5539,
-      "hits": 2896,
-      "accuracy": 0.522838,
+      "inputs": "technical",
+      "sessions": 5541,
+      "hits": 2898,
+      "accuracy": 0.52301,
       "accuracy_interval": [
-        0.509673,
-        0.535971
+        0.509848,
+        0.536141
       ],
-      "share_called_up": 0.742914,
+      "share_called_up": 0.742646,
       "brier_score": null,
       "trades": 94,
       "returns_by_cost_bps": {
         "0": {
-          "total_return": 1632.583889,
-          "annualised_return": 0.40018,
+          "total_return": 1632.585328,
+          "annualised_return": 0.400009,
           "annualised_return_interval": [
-            0.203514,
-            0.642386
+            0.207594,
+            0.642457
           ],
-          "annualised_volatility": 0.371792,
-          "sharpe_ratio": 1.089638
+          "annualised_volatility": 0.371725,
+          "sharpe_ratio": 1.089441
         },
         "5": {
-          "total_return": 1557.563482,
-          "annualised_return": 0.397188,
+          "total_return": 1557.564855,
+          "annualised_return": 0.397019,
           "annualised_return_interval": [
-            0.200615,
-            0.638913
+            0.204829,
+            0.639652
           ],
-          "annualised_volatility": 0.371792,
-          "sharpe_ratio": 1.083879
+          "annualised_volatility": 0.371725,
+          "sharpe_ratio": 1.083683
         },
         "10": {
-          "total_return": 1485.95332,
-          "annualised_return": 0.394201,
+          "total_return": 1485.954629,
+          "annualised_return": 0.394034,
           "annualised_return_interval": [
-            0.197923,
-            0.635511
+            0.20217,
+            0.636525
           ],
-          "annualised_volatility": 0.371795,
-          "sharpe_ratio": 1.078112
+          "annualised_volatility": 0.371728,
+          "sharpe_ratio": 1.077916
         }
       }
     },
     "logistic": {
       "kind": "model",
-      "sessions": 5539,
+      "inputs": "technical",
+      "sessions": 5541,
       "hits": 2813,
-      "accuracy": 0.507853,
+      "accuracy": 0.50767,
       "accuracy_interval": [
-        0.494687,
-        0.521009
+        0.494506,
+        0.520824
       ],
-      "share_called_up": 0.625745,
-      "brier_score": 0.2502,
+      "share_called_up": 0.62588,
+      "brier_score": 0.250215,
       "trades": 1911,
       "returns_by_cost_bps": {
         "0": {
-          "total_return": 343.3694,
-          "annualised_return": 0.304438,
+          "total_return": 322.373485,
+          "annualised_return": 0.300586,
           "annualised_return_interval": [
-            0.124562,
-            0.515454
+            0.123639,
+            0.522392
           ],
-          "annualised_volatility": 0.371663,
-          "sharpe_ratio": 0.899665
+          "annualised_volatility": 0.371724,
+          "sharpe_ratio": 0.891617
         },
         "5": {
-          "total_return": 131.419639,
-          "annualised_return": 0.248934,
+          "total_return": 123.346124,
+          "annualised_return": 0.245266,
           "annualised_return_interval": [
-            0.076615,
-            0.451759
+            0.076023,
+            0.457398
           ],
-          "annualised_volatility": 0.371616,
-          "sharpe_ratio": 0.782633
+          "annualised_volatility": 0.371676,
+          "sharpe_ratio": 0.774647
         },
         "10": {
-          "total_return": 49.894699,
-          "annualised_return": 0.195766,
+          "total_return": 46.791692,
+          "annualised_return": 0.192273,
           "annualised_return_interval": [
-            0.030296,
-            0.390875
+            0.030954,
+            0.395103
           ],
-          "annualised_volatility": 0.371607,
-          "sharpe_ratio": 0.665502
+          "annualised_volatility": 0.371665,
+          "sharpe_ratio": 0.65758
         }
       }
     },
     "xgboost": {
       "kind": "model",
-      "sessions": 5539,
-      "hits": 2806,
-      "accuracy": 0.50659,
+      "inputs": "technical",
+      "sessions": 5541,
+      "hits": 2803,
+      "accuracy": 0.505865,
       "accuracy_interval": [
-        0.493423,
-        0.519747
+        0.492702,
+        0.519021
       ],
-      "share_called_up": 0.590179,
-      "brier_score": 0.255118,
-      "trades": 1809,
+      "share_called_up": 0.592312,
+      "brier_score": 0.25503,
+      "trades": 1837,
       "returns_by_cost_bps": {
         "0": {
-          "total_return": 204.483277,
-          "annualised_return": 0.274152,
+          "total_return": 200.229964,
+          "annualised_return": 0.272829,
           "annualised_return_interval": [
-            0.109623,
-            0.45817
+            0.114037,
+            0.45007
           ],
-          "annualised_volatility": 0.349197,
-          "sharpe_ratio": 0.869572
+          "annualised_volatility": 0.351044,
+          "sharpe_ratio": 0.863689
         },
         "5": {
-          "total_return": 82.149355,
-          "annualised_return": 0.222771,
+          "total_return": 79.295907,
+          "annualised_return": 0.220742,
           "annualised_return_interval": [
-            0.065434,
-            0.400562
+            0.068337,
+            0.389187
           ],
-          "annualised_volatility": 0.349152,
-          "sharpe_ratio": 0.751673
+          "annualised_volatility": 0.351005,
+          "sharpe_ratio": 0.744631
         },
         "10": {
-          "total_return": 32.63138,
-          "annualised_return": 0.173438,
+          "total_return": 31.025397,
+          "annualised_return": 0.170762,
           "annualised_return_interval": [
-            0.023523,
-            0.344463
+            0.02468,
+            0.331458
           ],
-          "annualised_volatility": 0.349148,
-          "sharpe_ratio": 0.633673
+          "annualised_volatility": 0.351007,
+          "sharpe_ratio": 0.625476
         }
       }
     },
     "lstm": {
       "kind": "model",
-      "sessions": 5539,
+      "inputs": "technical",
+      "sessions": 5541,
       "hits": 2856,
-      "accuracy": 0.515617,
+      "accuracy": 0.51543,
       "accuracy_interval": [
-        0.502449,
-        0.528762
+        0.502265,
+        0.528574
       ],
-      "share_called_up": 0.610399,
-      "brier_score": 0.250647,
+      "share_called_up": 0.61054,
+      "brier_score": 0.250663,
       "trades": 1463,
       "returns_by_cost_bps": {
         "0": {
-          "total_return": 395.757602,
-          "annualised_return": 0.312869,
+          "total_return": 371.566297,
+          "annualised_return": 0.30899,
           "annualised_return_interval": [
-            0.140012,
-            0.514527
+            0.137396,
+            0.51045
           ],
-          "annualised_volatility": 0.349761,
-          "sharpe_ratio": 0.952139
+          "annualised_volatility": 0.349834,
+          "sharpe_ratio": 0.943546
         },
         "5": {
-          "total_return": 189.879547,
-          "annualised_return": 0.269885,
+          "total_return": 178.241142,
+          "annualised_return": 0.266148,
           "annualised_return_interval": [
-            0.102396,
-            0.465738
+            0.100318,
+            0.462092
           ],
-          "annualised_volatility": 0.349761,
-          "sharpe_ratio": 0.856883
+          "annualised_volatility": 0.349833,
+          "sharpe_ratio": 0.848347
         },
         "10": {
-          "total_return": 90.798277,
-          "annualised_return": 0.228288,
+          "total_return": 85.201106,
+          "annualised_return": 0.224688,
           "annualised_return_interval": [
-            0.065947,
-            0.416333
+            0.064328,
+            0.413681
           ],
-          "annualised_volatility": 0.349797,
-          "sharpe_ratio": 0.761552
+          "annualised_volatility": 0.349868,
+          "sharpe_ratio": 0.753073
+        }
+      }
+    },
+    "logistic_ctx": {
+      "kind": "model",
+      "inputs": "technical, market context and results dates",
+      "sessions": 5541,
+      "hits": 2831,
+      "accuracy": 0.510919,
+      "accuracy_interval": [
+        0.497754,
+        0.524068
+      ],
+      "share_called_up": 0.647176,
+      "brier_score": 0.250961,
+      "trades": 1881,
+      "returns_by_cost_bps": {
+        "0": {
+          "total_return": 319.404643,
+          "annualised_return": 0.300041,
+          "annualised_return_interval": [
+            0.104666,
+            0.520657
+          ],
+          "annualised_volatility": 0.396878,
+          "sharpe_ratio": 0.859825
+        },
+        "5": {
+          "total_return": 124.066989,
+          "annualised_return": 0.245593,
+          "annualised_return_interval": [
+            0.058553,
+            0.456477
+          ],
+          "annualised_volatility": 0.396877,
+          "sharpe_ratio": 0.75194
+        },
+        "10": {
+          "total_return": 47.795768,
+          "annualised_return": 0.1934,
+          "annualised_return_interval": [
+            0.014373,
+            0.396119
+          ],
+          "annualised_volatility": 0.396913,
+          "sharpe_ratio": 0.643997
         }
       }
     }
@@ -308,225 +360,315 @@
     {
       "predictor": "persistence",
       "reference": "always_up",
-      "accuracy_difference": -0.037371,
+      "accuracy_difference": -0.036997,
       "accuracy_difference_interval": [
-        -0.053624,
-        -0.020401
+        -0.053609,
+        -0.019672
       ],
-      "annualised_return_difference": -0.35071,
+      "annualised_return_difference": -0.346624,
       "annualised_return_difference_interval": [
-        -0.559804,
-        -0.168735
+        -0.550059,
+        -0.166129
       ],
       "cost_bps": 5
     },
     {
       "predictor": "ma_200",
       "reference": "always_up",
-      "accuracy_difference": -0.001444,
+      "accuracy_difference": -0.001083,
       "accuracy_difference_interval": [
-        -0.013545,
-        0.011916
+        -0.013175,
+        0.012277
       ],
-      "annualised_return_difference": 0.01917,
+      "annualised_return_difference": 0.023098,
       "annualised_return_difference_interval": [
-        -0.151339,
-        0.185933
+        -0.145358,
+        0.191431
       ],
       "cost_bps": 5
     },
     {
       "predictor": "ma_200",
       "reference": "persistence",
-      "accuracy_difference": 0.035927,
+      "accuracy_difference": 0.035914,
       "accuracy_difference_interval": [
-        0.02022,
-        0.052902
+        0.019852,
+        0.052527
       ],
-      "annualised_return_difference": 0.36988,
+      "annualised_return_difference": 0.369722,
       "annualised_return_difference_interval": [
-        0.218256,
-        0.549274
+        0.215032,
+        0.549126
       ],
       "cost_bps": 5
     },
     {
       "predictor": "logistic",
       "reference": "always_up",
-      "accuracy_difference": -0.016429,
+      "accuracy_difference": -0.016423,
       "accuracy_difference_interval": [
-        -0.030872,
-        -0.001264
+        -0.03068,
+        -0.001263
       ],
-      "annualised_return_difference": -0.129084,
+      "annualised_return_difference": -0.128655,
       "annualised_return_difference_interval": [
-        -0.310222,
-        0.033795
+        -0.310654,
+        0.036928
       ],
       "cost_bps": 5
     },
     {
       "predictor": "logistic",
       "reference": "persistence",
-      "accuracy_difference": 0.020942,
+      "accuracy_difference": 0.020574,
       "accuracy_difference_interval": [
-        0.003787,
-        0.038459
+        0.002698,
+        0.03826
       ],
-      "annualised_return_difference": 0.221626,
+      "annualised_return_difference": 0.217969,
       "annualised_return_difference_interval": [
-        0.07081,
-        0.376948
+        0.070086,
+        0.381346
       ],
       "cost_bps": 5
     },
     {
       "predictor": "logistic",
       "reference": "ma_200",
-      "accuracy_difference": -0.014985,
+      "accuracy_difference": -0.01534,
       "accuracy_difference_interval": [
-        -0.031057,
-        0.000722
+        -0.031583,
+        0.000365
       ],
-      "annualised_return_difference": -0.148254,
+      "annualised_return_difference": -0.151753,
       "annualised_return_difference_interval": [
-        -0.322541,
-        0.024239
+        -0.326792,
+        0.024141
       ],
       "cost_bps": 5
     },
     {
       "predictor": "xgboost",
       "reference": "always_up",
-      "accuracy_difference": -0.017693,
+      "accuracy_difference": -0.018228,
       "accuracy_difference_interval": [
-        -0.034663,
+        -0.035553,
         -0.000898
       ],
-      "annualised_return_difference": -0.155247,
+      "annualised_return_difference": -0.153179,
       "annualised_return_difference_interval": [
-        -0.350256,
-        0.012067
+        -0.3462,
+        0.010589
       ],
       "cost_bps": 5
     },
     {
       "predictor": "xgboost",
       "reference": "persistence",
-      "accuracy_difference": 0.019679,
+      "accuracy_difference": 0.018769,
       "accuracy_difference_interval": [
-        -0.000361,
-        0.037917
+        -0.001448,
+        0.037899
       ],
-      "annualised_return_difference": 0.195463,
+      "annualised_return_difference": 0.193445,
       "annualised_return_difference_interval": [
-        0.039744,
-        0.359867
+        0.030792,
+        0.356345
       ],
       "cost_bps": 5
     },
     {
       "predictor": "xgboost",
       "reference": "ma_200",
-      "accuracy_difference": -0.016248,
+      "accuracy_difference": -0.017145,
       "accuracy_difference_interval": [
-        -0.033038,
-        0.000722
+        -0.034651,
+        0.000185
       ],
-      "annualised_return_difference": -0.174417,
+      "annualised_return_difference": -0.176277,
       "annualised_return_difference_interval": [
-        -0.368165,
-        0.003303
+        -0.382875,
+        0.014018
       ],
       "cost_bps": 5
     },
     {
       "predictor": "xgboost",
       "reference": "logistic",
-      "accuracy_difference": -0.001264,
+      "accuracy_difference": -0.001805,
       "accuracy_difference_interval": [
-        -0.016248,
-        0.014624
+        -0.017149,
+        0.01336
       ],
-      "annualised_return_difference": -0.026163,
+      "annualised_return_difference": -0.024524,
       "annualised_return_difference_interval": [
-        -0.168333,
-        0.117269
+        -0.169166,
+        0.110116
       ],
       "cost_bps": 5
     },
     {
       "predictor": "lstm",
       "reference": "always_up",
-      "accuracy_difference": -0.008666,
+      "accuracy_difference": -0.008663,
       "accuracy_difference_interval": [
-        -0.023831,
-        0.007222
+        -0.023642,
+        0.007223
       ],
-      "annualised_return_difference": -0.108132,
+      "annualised_return_difference": -0.107773,
       "annualised_return_difference_interval": [
-        -0.300309,
-        0.071958
+        -0.304224,
+        0.071852
       ],
       "cost_bps": 5
     },
     {
       "predictor": "lstm",
       "reference": "persistence",
-      "accuracy_difference": 0.028706,
+      "accuracy_difference": 0.028334,
       "accuracy_difference_interval": [
-        0.010286,
-        0.048204
+        0.009921,
+        0.046932
       ],
-      "annualised_return_difference": 0.242578,
+      "annualised_return_difference": 0.238851,
       "annualised_return_difference_interval": [
-        0.091608,
-        0.403535
+        0.087975,
+        0.406876
       ],
       "cost_bps": 5
     },
     {
       "predictor": "lstm",
       "reference": "ma_200",
-      "accuracy_difference": -0.007222,
+      "accuracy_difference": -0.00758,
       "accuracy_difference_interval": [
-        -0.021669,
-        0.007944
+        -0.022559,
+        0.007038
       ],
-      "annualised_return_difference": -0.127303,
+      "annualised_return_difference": -0.130871,
       "annualised_return_difference_interval": [
-        -0.300526,
-        0.027947
+        -0.301002,
+        0.02745
       ],
       "cost_bps": 5
     },
     {
       "predictor": "lstm",
       "reference": "logistic",
-      "accuracy_difference": 0.007763,
+      "accuracy_difference": 0.00776,
       "accuracy_difference_interval": [
-        -0.004152,
-        0.019498
+        -0.004331,
+        0.019311
       ],
-      "annualised_return_difference": 0.020951,
+      "annualised_return_difference": 0.020882,
       "annualised_return_difference_interval": [
-        -0.093447,
-        0.13848
+        -0.092906,
+        0.137495
       ],
       "cost_bps": 5
     },
     {
       "predictor": "lstm",
       "reference": "xgboost",
-      "accuracy_difference": 0.009027,
+      "accuracy_difference": 0.009565,
       "accuracy_difference_interval": [
-        -0.007226,
-        0.024192
+        -0.005956,
+        0.024364
       ],
-      "annualised_return_difference": 0.047114,
+      "annualised_return_difference": 0.045406,
       "annualised_return_difference_interval": [
-        -0.092472,
-        0.188874
+        -0.095193,
+        0.190113
+      ],
+      "cost_bps": 5
+    },
+    {
+      "predictor": "logistic_ctx",
+      "reference": "always_up",
+      "accuracy_difference": -0.013175,
+      "accuracy_difference_interval": [
+        -0.028343,
+        0.00199
+      ],
+      "annualised_return_difference": -0.128328,
+      "annualised_return_difference_interval": [
+        -0.283259,
+        0.021979
+      ],
+      "cost_bps": 5
+    },
+    {
+      "predictor": "logistic_ctx",
+      "reference": "persistence",
+      "accuracy_difference": 0.023822,
+      "accuracy_difference_interval": [
+        0.005234,
+        0.042055
+      ],
+      "annualised_return_difference": 0.218296,
+      "annualised_return_difference_interval": [
+        0.061435,
+        0.38661
+      ],
+      "cost_bps": 5
+    },
+    {
+      "predictor": "logistic_ctx",
+      "reference": "ma_200",
+      "accuracy_difference": -0.012092,
+      "accuracy_difference_interval": [
+        -0.029778,
+        0.004151
+      ],
+      "annualised_return_difference": -0.151426,
+      "annualised_return_difference_interval": [
+        -0.333334,
+        0.008999
+      ],
+      "cost_bps": 5
+    },
+    {
+      "predictor": "logistic_ctx",
+      "reference": "logistic",
+      "accuracy_difference": 0.003249,
+      "accuracy_difference_interval": [
+        -0.008487,
+        0.014623
+      ],
+      "annualised_return_difference": 0.000327,
+      "annualised_return_difference_interval": [
+        -0.115902,
+        0.120881
+      ],
+      "cost_bps": 5
+    },
+    {
+      "predictor": "logistic_ctx",
+      "reference": "xgboost",
+      "accuracy_difference": 0.005053,
+      "accuracy_difference_interval": [
+        -0.011374,
+        0.020217
+      ],
+      "annualised_return_difference": 0.024851,
+      "annualised_return_difference_interval": [
+        -0.117792,
+        0.171156
+      ],
+      "cost_bps": 5
+    },
+    {
+      "predictor": "logistic_ctx",
+      "reference": "lstm",
+      "accuracy_difference": -0.004512,
+      "accuracy_difference_interval": [
+        -0.01895,
+        0.009389
+      ],
+      "annualised_return_difference": -0.020555,
+      "annualised_return_difference_interval": [
+        -0.167492,
+        0.120269
       ],
       "cost_bps": 5
     }

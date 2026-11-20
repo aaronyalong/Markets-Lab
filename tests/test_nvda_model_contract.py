@@ -1,5 +1,8 @@
 """Rules every registered model must obey. A new model gets these tests for free.
 
+Models on the technical columns and models on the wider "context" columns are both
+covered; each is given the columns it is registered for.
+
 The important ones are the look-ahead tests: whatever the model is, its calls for a
 session must not depend on anything that happened after that session.
 """
@@ -10,42 +13,71 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from markets_lab.analysis.nvda.backtest import MODEL_FACTORIES, PredictorFactory
+from context_frames import make_context, make_publications
+from markets_lab.analysis.nvda.backtest import (
+    CONTEXT_MODEL_FACTORIES,
+    MODEL_FACTORIES,
+    PredictorFactory,
+)
+from markets_lab.analysis.nvda.context_features import (
+    EXTENDED_FEATURE_COLUMNS,
+    build_context_dataset,
+)
 from markets_lab.analysis.nvda.features import FEATURE_COLUMNS, Dataset, build_dataset
 from markets_lab.analysis.nvda.predictors import PREDICTED_UP, PROBABILITY_UP, Predictor
 from markets_lab.analysis.nvda.validation import WalkForwardConfig, walk_forward
-from price_frames import make_prices
+from price_frames import at, make_prices
 
 CONFIG = WalkForwardConfig(initial_train_sessions=300, refit_every=100)
 PRICE_COLUMNS = ["open", "high", "low", "close", "adj_close"]
 TRAIN_ROWS = 500
+ROWS = 900
+ALL_FACTORIES: dict[str, PredictorFactory] = {**MODEL_FACTORIES, **CONTEXT_MODEL_FACTORIES}
 
-pytestmark = pytest.mark.parametrize("name", list(MODEL_FACTORIES))
+pytestmark = pytest.mark.parametrize("name", list(ALL_FACTORIES))
+
+
+def dataset_for(name: str, prices: pd.DataFrame) -> Dataset:
+    """The labelled dataset with the columns this model is registered for."""
+    if name in CONTEXT_MODEL_FACTORIES:
+        return build_context_dataset(
+            prices, make_context(ROWS), make_publications(), as_of=at("2030-03-14 22:30")
+        ).labelled()
+    return build_dataset(prices).labelled()
+
+
+def columns_for(name: str) -> list[str]:
+    return list(EXTENDED_FEATURE_COLUMNS if name in CONTEXT_MODEL_FACTORIES else FEATURE_COLUMNS)
 
 
 @pytest.fixture(scope="module")
 def prices() -> pd.DataFrame:
-    return make_prices(rows=900)
+    return make_prices(rows=ROWS)
 
 
 @pytest.fixture(scope="module")
-def labelled(prices: pd.DataFrame) -> Dataset:
-    return build_dataset(prices).labelled()
+def datasets(prices: pd.DataFrame) -> dict[str, Dataset]:
+    return {name: dataset_for(name, prices) for name in ALL_FACTORIES}
+
+
+@pytest.fixture
+def labelled(request: pytest.FixtureRequest, datasets: dict[str, Dataset]) -> Dataset:
+    return datasets[request.node.callspec.params["name"]]
 
 
 def fitted(name: str, labelled: Dataset) -> Predictor:
-    model = MODEL_FACTORIES[name]()
+    model = ALL_FACTORIES[name]()
     model.fit(labelled.features.iloc[:TRAIN_ROWS], labelled.target_up.iloc[:TRAIN_ROWS])
     return model
 
 
 def factory(name: str) -> PredictorFactory:
-    return MODEL_FACTORIES[name]
+    return ALL_FACTORIES[name]
 
 
 class TestOutput:
     def test_registered_under_its_own_name(self, name: str) -> None:
-        assert MODEL_FACTORIES[name]().name == name
+        assert ALL_FACTORIES[name]().name == name
 
     def test_probabilities_and_calls_are_consistent(self, name: str, labelled: Dataset) -> None:
         calls = fitted(name, labelled).predict(labelled.features.iloc[TRAIN_ROWS:])
@@ -53,7 +85,7 @@ class TestOutput:
         assert calls.index.equals(labelled.features.index[TRAIN_ROWS:])
         assert ((probability >= 0) & (probability <= 1)).all()
         assert (calls[PREDICTED_UP] == (probability > 0.5)).all()
-        assert list(labelled.features.columns) == list(FEATURE_COLUMNS)
+        assert list(labelled.features.columns) == columns_for(name)
 
     def test_same_training_data_gives_the_same_model(self, name: str, labelled: Dataset) -> None:
         first = fitted(name, labelled).predict(labelled.features.iloc[TRAIN_ROWS:])
@@ -67,36 +99,36 @@ class TestOutput:
 class TestGuards:
     def test_predict_before_fit_raises(self, name: str, labelled: Dataset) -> None:
         with pytest.raises(RuntimeError, match="fit must be called"):
-            MODEL_FACTORIES[name]().predict(labelled.features)
+            ALL_FACTORIES[name]().predict(labelled.features)
 
     def test_one_sided_training_data_raises(self, name: str, labelled: Dataset) -> None:
         with pytest.raises(ValueError, match="only one outcome"):
-            MODEL_FACTORIES[name]().fit(labelled.features, labelled.target_up * 0.0)
+            ALL_FACTORIES[name]().fit(labelled.features, labelled.target_up * 0.0)
 
     @pytest.mark.parametrize("bad", [np.nan, 0.5, 2.0])
     def test_bad_outcomes_raise(self, name: str, labelled: Dataset, bad: float) -> None:
         target = labelled.target_up.copy()
         target.iloc[3] = bad
         with pytest.raises(ValueError, match="must be 0 or 1"):
-            MODEL_FACTORIES[name]().fit(labelled.features, target)
+            ALL_FACTORIES[name]().fit(labelled.features, target)
 
     @pytest.mark.parametrize("bad", [np.nan, np.inf])
     def test_bad_feature_values_raise(self, name: str, labelled: Dataset, bad: float) -> None:
         broken = labelled.features.copy()
         broken.loc[broken.index[3], "ret_1"] = bad
         with pytest.raises(ValueError, match="missing or infinite"):
-            MODEL_FACTORIES[name]().fit(broken, labelled.target_up)
+            ALL_FACTORIES[name]().fit(broken, labelled.target_up)
         with pytest.raises(ValueError, match="missing or infinite"):
             fitted(name, labelled).predict(broken)
 
     def test_different_columns_at_predict_time_raise(self, name: str, labelled: Dataset) -> None:
-        reordered = labelled.features[list(reversed(FEATURE_COLUMNS))]
+        reordered = labelled.features[list(reversed(columns_for(name)))]
         with pytest.raises(ValueError, match="columns the model was fitted on"):
             fitted(name, labelled).predict(reordered)
 
     def test_mismatched_lengths_raise(self, name: str, labelled: Dataset) -> None:
         with pytest.raises(ValueError, match="same number of rows"):
-            MODEL_FACTORIES[name]().fit(labelled.features, labelled.target_up.iloc[:-1])
+            ALL_FACTORIES[name]().fit(labelled.features, labelled.target_up.iloc[:-1])
 
 
 class TestNoLookAhead:
@@ -134,8 +166,8 @@ class TestNoLookAhead:
             corrupted.loc[later, column] = rng.uniform(1_000, 9_000, len(later))
         corrupted.loc[later, "volume"] = rng.integers(1, 10, len(later))
 
-        clean = walk_forward(build_dataset(prices).labelled(), factory(name), CONFIG)
-        dirty = walk_forward(build_dataset(corrupted).labelled(), factory(name), CONFIG)
+        clean = walk_forward(dataset_for(name, prices), factory(name), CONFIG)
+        dirty = walk_forward(dataset_for(name, corrupted), factory(name), CONFIG)
         through = prices.index[cut]
         columns = [PREDICTED_UP, PROBABILITY_UP]
         pd.testing.assert_frame_equal(
