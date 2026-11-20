@@ -15,8 +15,6 @@ toc: false
 Each question gets a naive baseline to beat, a stated uncertainty, and an honest
 answer, including when the answer is "it didn't work".
 
-[Open the NVIDIA predictor →](experiments/nvidia.qmd){.btn-lab .primary}
-
 ::::
 
 :::: {.hero-art}

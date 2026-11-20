@@ -29,8 +29,11 @@ $link-color: $lab-accent;
 $border-color: $lab-border;
 $card-bg: $lab-panel;
 
-$font-family-sans-serif: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
-$font-family-monospace: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
+// Text in a plain technical sans, headings in a sharper grotesk, and numbers,
+// labels and the menu in the matching monospace, like a quote screen.
+$font-family-sans-serif: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+$font-family-monospace: "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
+$headings-font-family: "Space Grotesk", $font-family-sans-serif;
 $headings-font-weight: 700;
 
 $navbar-bg: $lab-bg;
@@ -71,6 +74,7 @@ a:hover {
 }
 
 .navbar-brand {
+  font-family: $headings-font-family;
   font-weight: 700;
   letter-spacing: -0.01em;
   display: inline-flex;
@@ -89,6 +93,7 @@ a:hover {
 
 // "by Aaron Yalong" after the site name, quieter than the name itself.
 .navbar-brand .brand-by {
+  font-family: $font-family-sans-serif;
   font-weight: 400;
   font-size: 0.85em;
   letter-spacing: 0;
@@ -120,8 +125,13 @@ a:hover {
   }
 }
 
-.navbar .nav-link {
+.navbar .nav-link,
+.dropdown-item {
+  font-family: $font-family-monospace;
+  font-size: 0.82rem;
   font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .dropdown-menu {
@@ -233,10 +243,16 @@ a:hover {
     margin-bottom: 0;
   }
 
+  // The home page's one-line notice: a small box that fits its text.
   &.center {
+    width: fit-content;
+    max-width: 100%;
+    margin: 0 auto;
+    padding: 0.45rem 1rem;
+    font-size: 0.9rem;
     text-align: center;
     border-left-width: 1px;
-    border-radius: 12px;
+    border-radius: 999px;
     color: $lab-muted;
 
     strong {

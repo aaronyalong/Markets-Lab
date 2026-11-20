@@ -84,10 +84,12 @@ def test_theme_uses_the_agreed_palette_and_fonts() -> None:
     assert colours["green"] == "#1fd68f"
     assert colours["red"] == "#ff5d6c"
     theme = (SITE / "theme.scss").read_text()
-    assert '$font-family-sans-serif: "Inter"' in theme
-    assert '$font-family-monospace: "JetBrains Mono"' in theme
+    assert '$font-family-sans-serif: "IBM Plex Sans"' in theme
+    assert '$font-family-monospace: "IBM Plex Mono"' in theme
+    assert '$headings-font-family: "Space Grotesk"' in theme
     fonts = (SITE / "_includes" / "fonts.html").read_text()
-    assert "family=Inter" in fonts and "family=JetBrains+Mono" in fonts
+    for family in ("IBM+Plex+Sans", "IBM+Plex+Mono", "Space+Grotesk"):
+        assert f"family={family}" in fonts
 
 
 @pytest.mark.parametrize("colour", ["text", "muted", "green", "red", "lime", "mint"])

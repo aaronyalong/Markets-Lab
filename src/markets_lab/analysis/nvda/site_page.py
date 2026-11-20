@@ -72,7 +72,7 @@ TEXT, MUTED, BORDER, PANEL = "#e9edf3", "#94a0b4", "#1f2630", "#0e1217"
 LIME, AMBER = "#9be564", "#ffb648"
 MODEL_COLOURS = (LIME, AMBER, TEXT, "#ff9ecb", "#d9c27a")
 BASELINE_COLOURS = ("#8793a6", "#6c7789", "#566070")
-CHART_FONT = "Inter, system-ui, sans-serif"
+CHART_FONT = "IBM Plex Sans, system-ui, sans-serif"
 
 
 @dataclass(frozen=True, slots=True)
