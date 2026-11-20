@@ -36,6 +36,21 @@ down the next day?
   date, model, predicted direction, probability, and whether it was right.
 - "No model beats buy-and-hold" is a valid outcome and will be reported as such.
 
+### NVIDIA headlines
+
+Each morning a separate job collects the last day's NVIDIA headlines from NVIDIA's
+newsroom feed, the company's SEC filings and Yahoo Finance's news list, and the
+NVIDIA page links to them. Only the headline, publisher, time and link are kept;
+article text and publishers' summaries are not stored or shown. Each day is written
+once to `news/nvda/YYYY-MM-DD.json` and never changed afterwards.
+
+```bash
+uv run python -m markets_lab.collectors.nvda_news --dry-run   # show, write nothing
+```
+
+SEC asks automated clients to identify themselves. The job uses a generic client
+name unless the repository secret `SEC_USER_AGENT` is set to a name with a contact.
+
 ### Earnings explainer (planned)
 
 Plain-English summaries of company 10-Q and 10-K filings from SEC EDGAR, where
@@ -61,6 +76,7 @@ tests/          pytest suite
 data/           raw local data (gitignored)
 site/           Quarto website (pages, theme); build output is gitignored
 predictions/    the live prediction log, appended to by the nightly job
+news/           collected NVIDIA headlines, one file per day
 reports/        backtest aggregates shown on the site
 ```
 

@@ -29,6 +29,16 @@ be followed.
 
 ::::: {.band}
 
+[In the news]{.eyebrow}
+
+## NVIDIA headlines {.section-title}
+
+{{< include /_generated/news.md >}}
+
+:::::
+
+::::: {.band}
+
 [The stock]{.eyebrow}
 
 ## Live chart {.section-title}

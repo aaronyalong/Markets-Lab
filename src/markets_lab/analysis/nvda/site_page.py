@@ -3,8 +3,9 @@
 The page itself is a Quarto document. Everything on it that comes from data is
 written here, from two published sources and nothing else:
 
-- the prediction log (calls and outcomes; directions only), and
-- the backtest report (aggregates only).
+- the prediction log (calls and outcomes; directions only),
+- the backtest report (aggregates only), and
+- the collected headlines (headline, publisher, time and link only).
 
 Each fragment is a small file of HTML that the page includes. Sentences that state
 a finding are generated from the numbers, so the wording cannot drift from the
@@ -39,10 +40,13 @@ from markets_lab.analysis.nvda.prediction_log import (
     read_log,
     scored_predictions,
 )
+from markets_lab.collectors.nvda_news import Collection, NewsError, NewsItem, load_recent
 
 GENERATED_DIR = "_generated"
 BUY_AND_HOLD = "always_up"
 SESSIONS_TO_TELL_55_FROM_50 = 385
+NEWS_DAYS_SHOWN = 3
+NEWS_ITEMS_SHOWN = 8
 
 DISPLAY_NAMES = {
     "always_up": "Always up",
@@ -300,6 +304,45 @@ def _status(inner: str) -> str:
     )
 
 
+def news_fragment(collections: Sequence[Collection]) -> str:
+    """The latest collected headlines, each linking to its publisher.
+
+    Headlines are other people's words. They are escaped, shown as plain text and
+    labelled as such; nothing here is written or chosen by a person or a model.
+    """
+    if not collections:
+        return _raw(
+            '<div class="panel muted">No headlines have been collected yet. They appear '
+            "here after the first daily run.</div>"
+        )
+    seen: dict[str, NewsItem] = {}
+    for collection in collections:
+        for item in collection.items:
+            seen.setdefault(item.url, item)
+    latest = sorted(seen.values(), key=lambda item: item.published_at, reverse=True)
+    latest = latest[:NEWS_ITEMS_SHOWN]
+    collected = max(collection.collected_at for collection in collections)
+    if not latest:
+        body = '<div class="panel muted">No NVIDIA headlines in the last few days.</div>'
+    else:
+        rows = "".join(
+            "<li>"
+            f'<a href="{html.escape(item.url, quote=True)}" target="_blank" '
+            f'rel="noopener nofollow">{html.escape(item.title)}</a>'
+            f'<span class="news-meta">{html.escape(item.publisher)} · '
+            f"{html.escape(_stamp(item.published_at))}</span>"
+            "</li>"
+            for item in latest
+        )
+        body = f'<ul class="news-list">{rows}</ul>'
+    note = (
+        f"Collected automatically on {_stamp(collected)} from NVIDIA's newsroom, SEC filings "
+        "and Yahoo Finance. Headlines are their publishers' words, not this site's, and "
+        "are not checked or selected by a person. Not advice."
+    )
+    return _raw(f'{body}<p class="muted small">{html.escape(note)}</p>')
+
+
 def track_record_fragment(records: Sequence[Record]) -> str:
     """Live accuracy table and the cumulative hits-minus-misses chart."""
     scored = scored_predictions(records)
@@ -404,11 +447,16 @@ def plotly_loader_fragment() -> str:
     )
 
 
-def build_fragments(report: Mapping[str, Any], records: Sequence[Record]) -> dict[str, str]:
+def build_fragments(
+    report: Mapping[str, Any],
+    records: Sequence[Record],
+    news: Sequence[Collection] = (),
+) -> dict[str, str]:
     """Every generated file for the NVIDIA page, by file name."""
     return {
         "plotly.md": plotly_loader_fragment(),
         "status.md": status_fragment(records),
+        "news.md": news_fragment(news),
         "tomorrow.md": tomorrow_fragment(records),
         "track_record.md": track_record_fragment(records),
         "backtest.md": backtest_fragment(report),
@@ -544,6 +592,10 @@ def _long_date(day: date) -> str:
     return f"{day:%A} {day.day} {day:%B %Y}"
 
 
+def _stamp(moment: datetime) -> str:
+    return f"{moment.day} {moment:%b %Y, %H:%M} UTC"
+
+
 def _short_date(day: date) -> str:
     return f"{day:%a} {day.day} {day:%b %Y}"
 
@@ -580,22 +632,25 @@ def main(argv: Sequence[str] | None = None, *, report: Callable[[str], None] = _
     parser.add_argument(
         "--report", type=Path, default=None, help="default: reports/nvda_backtest.json"
     )
+    parser.add_argument("--news-dir", type=Path, default=None, help="default: news/nvda")
     args = parser.parse_args(argv)
     site_dir: Path = args.site_dir.resolve()
     root = site_dir.parent
     log_path: Path = args.log or root / "predictions" / "nvda.jsonl"
     report_path: Path = args.report or root / "reports" / "nvda_backtest.json"
+    news_dir: Path = args.news_dir or root / "news" / "nvda"
     try:
         if not report_path.exists():
             raise FileNotFoundError(f"{report_path} not found; run the backtest first")
         backtest = json.loads(report_path.read_text(encoding="utf-8"))
         records = read_log(log_path)
-    except (FileNotFoundError, LogError, json.JSONDecodeError) as exc:
+        news = load_recent(news_dir, days=NEWS_DAYS_SHOWN)
+    except (FileNotFoundError, LogError, NewsError, json.JSONDecodeError) as exc:
         report(f"error: {exc}")
         return 1
     out = site_dir / GENERATED_DIR
     out.mkdir(parents=True, exist_ok=True)
-    fragments = build_fragments(backtest, records)
+    fragments = build_fragments(backtest, records, news)
     for name, content in fragments.items():
         (out / name).write_text(content, encoding="utf-8")
     stamp = datetime.now(tz=UTC).strftime("%Y-%m-%d %H:%M UTC")

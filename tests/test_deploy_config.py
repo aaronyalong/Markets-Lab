@@ -14,6 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "deploy.yml"
 NIGHTLY = ROOT / ".github" / "workflows" / "nightly.yml"
+NEWS = ROOT / ".github" / "workflows" / "news.yml"
 WRANGLER = ROOT / "wrangler.jsonc"
 
 
@@ -92,11 +93,16 @@ class TestDeployWorkflow:
         assert verify < publish
         assert "continue-on-error" not in text
 
-    def test_it_redeploys_after_a_successful_nightly_run(self) -> None:
+    def test_it_redeploys_after_each_job_that_commits_new_data(self) -> None:
+        # Those jobs push with the workflow token, which starts no push workflows,
+        # so the deploy has to be triggered by name.
         text = WORKFLOW.read_text()
-        nightly_name = re.search(r"^name: (.+)$", NIGHTLY.read_text(), re.MULTILINE)
-        assert nightly_name is not None
-        assert f'workflows: ["{nightly_name.group(1)}"]' in text
+        names = []
+        for workflow in (NIGHTLY, NEWS):
+            name = re.search(r"^name: (.+)$", workflow.read_text(), re.MULTILINE)
+            assert name is not None
+            names.append(f'"{name.group(1)}"')
+        assert f"workflows: [{', '.join(names)}]" in text
         assert "github.event.workflow_run.conclusion == 'success'" in text
         # A run started by the nightly job must build the commit it just pushed.
         assert "ref: main" in text

@@ -1,0 +1,69 @@
+name: NVDA news
+
+# Collects the last day's NVIDIA headlines (headline, publisher, time and link
+# only) into news/nvda/, one file per day. Research only, not financial advice.
+#
+# Kept separate from the nightly prediction job on purpose: a news source being
+# down must never stop the prediction log from being written.
+#
+# A day's file is written once and never changed. The job refuses to commit
+# anything except new day files, so earlier days cannot be edited by it.
+
+on:
+  schedule:
+    - cron: "0 11 * * *" # 06:00 or 07:00 New York, before the market opens
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nvda-news
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NEWS_DIR: news/nvda
+      # Optional. SEC asks automated clients to identify themselves; set this
+      # secret to a client name with a contact. A generic name is used without it.
+      SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Collect headlines
+        run: uv run python -m markets_lab.collectors.nvda_news --dir "$NEWS_DIR"
+
+      # Only brand-new day files may appear. A modified or deleted file, or any
+      # change elsewhere, fails the job before anything is committed.
+      - name: Refuse anything except new day files
+        run: |
+          changes="$(git status --porcelain --untracked-files=all)"
+          other="$(printf '%s\n' "$changes" | grep -v -E "^\?\? $NEWS_DIR/[0-9]{4}-[0-9]{2}-[0-9]{2}\.json$" || true)"
+          if [ -n "$other" ]; then
+            echo "Unexpected changes:"
+            echo "$other"
+            exit 1
+          fi
+
+      - name: Commit the new day
+        run: |
+          if [ -z "$(git status --porcelain --untracked-files=all -- "$NEWS_DIR")" ]; then
+            echo "No new day file; nothing to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- "$NEWS_DIR"
+          git commit -m "bot: add NVDA headlines ($(date -u +%Y-%m-%d))"
+          # The nightly job may have pushed in the meantime. This commit only adds
+          # a new file, so replaying it on top cannot conflict.
+          git pull --rebase origin main
+          git push

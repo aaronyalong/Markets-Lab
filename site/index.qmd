@@ -10,17 +10,12 @@ toc: false
 ::::: {.hero-inner}
 :::: {.hero-copy}
 
-[Hobby research lab]{.eyebrow}
-
 # Markets, [measured.]{.grad}
 
 Each question gets a naive baseline to beat, a stated uncertainty, and an honest
 answer, including when the answer is "it didn't work".
 
-[Open the NVIDIA experiment →](experiments/nvidia.qmd){.btn-lab .primary}
-[How it works](method.qmd){.btn-lab}
-
-[A project by [Aaron Yalong](https://aaronyalong.com).]{.muted .byline-home}
+[Open the NVIDIA predictor →](experiments/nvidia.qmd){.btn-lab .primary}
 
 ::::
 
@@ -78,81 +73,27 @@ answer, including when the answer is "it didn't work".
 :::::
 ::::::
 
-{{< include /_generated/status.md >}}
-
 ::::: {.band .tight}
 ::: {.notice .center}
-**Not financial advice.** Nothing here is a recommendation to buy or sell anything.
-This site makes no trades and gives no signals.
+**Not financial advice.** This site makes no trades and gives no signals.
 :::
 :::::
 
-::::: {.band}
+::::: {.band .tight}
 
-[The method]{.eyebrow}
-
-## Four rules, every time {.section-title}
-
-:::: {.steps}
-
-::: {.step}
-`<i class="bi bi-flag"></i>`{=html}
-
-#### Baselines first
-
-A model only counts if it beats the simplest possible answer, such as "it always
-goes up".
-:::
-
-::: {.step}
-`<i class="bi bi-eye-slash"></i>`{=html}
-
-#### No peeking
-
-Every call is made by a model that has only seen the days before it. Tests fail if
-the future leaks in.
-:::
-
-::: {.step}
-`<i class="bi bi-arrows-collapse-vertical"></i>`{=html}
-
-#### Uncertainty shown
-
-Every number comes with the range it plausibly lies in. If a difference could be
-zero, it is reported as no difference.
-:::
-
-::: {.step}
-`<i class="bi bi-journal-check"></i>`{=html}
-
-#### Live log decides
-
-Predictions are written down before the market opens and scored afterwards, in a
-record that cannot be edited.
-:::
-
-::::
-:::::
-
-::::: {.band}
-
-[Experiments]{.eyebrow}
-
-## What's in the lab {.section-title}
+## Experiments {.section-label}
 
 ::: {.card-grid}
 
 ::: {.lab-card .featured}
 `<i class="bi bi-graph-up-arrow card-icon"></i>`{=html}
-[Experiment · live]{.tag .live}
+[Live]{.tag .live}
 
-### NVIDIA predictor
+### [NVIDIA predictor [→]{.arrow}](experiments/nvidia.qmd){.card-link}
 
 Can machine learning beat naive baselines at predicting whether NVDA closes up or
-down the next day? Models are tested on two decades of history and then scored
-daily on predictions they cannot take back.
-
-[Open the experiment →](experiments/nvidia.qmd){.card-link}
+down the next day? Tested on two decades of history, then scored daily on calls it
+cannot take back.
 :::
 
 ::: {.lab-card .coming-soon}
@@ -164,12 +105,8 @@ daily on predictions they cannot take back.
 Plain-English summaries of company filings with the SEC, where every sentence
 points to the passage it came from and every figure is checked against the filing's
 own data.
-
-Not started yet.
 :::
 
 :::
-
-Every experiment follows the rules on the [Method](method.qmd) page.
 
 :::::

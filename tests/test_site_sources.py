@@ -155,14 +155,16 @@ def test_the_ticker_is_on_both_main_pages_with_its_attribution() -> None:
     for page in ("index.qmd", "experiments/nvidia.qmd"):
         text = (SITE / page).read_text()
         assert "{{< include /_includes/ticker.md >}}" in text
-        assert "{{< include /_generated/status.md >}}" in text
 
 
 def test_the_site_names_its_author() -> None:
     config = CONFIG.read_text()
     footer = config.split("page-footer:", 1)[1].split("\nformat:", 1)[0]
     assert "Built by [Aaron Yalong](https://aaronyalong.com)" in footer
-    assert "[Aaron Yalong](https://aaronyalong.com)" in (SITE / "index.qmd").read_text()
+    # The name sits beside the site title in the top bar of every page.
+    navbar = config.split("navbar:", 1)[1].split("page-footer:", 1)[0]
+    assert 'title: "Markets Lab [by Aaron Yalong]{.brand-by}"' in navbar
+    assert "    right:\n" in navbar and "    left:\n" not in navbar
 
 
 def home_cards() -> list[str]:
@@ -210,11 +212,19 @@ def test_nvidia_page_has_the_chart_the_notice_and_every_generated_section() -> N
     assert "tradingview-widget-copyright" in page
     assert "https://www.tradingview.com/" in page
     assert "An experiment, not advice." in page
-    for fragment in ("status", "plotly", "tomorrow", "track_record", "backtest", "updated"):
+    for fragment in (
+        "status",
+        "news",
+        "plotly",
+        "tomorrow",
+        "track_record",
+        "backtest",
+        "updated",
+    ):
         assert f"{{{{< include /_generated/{fragment}.md >}}}}" in page
     # The chart library must be loaded before the first chart on the page.
     assert page.index("_generated/plotly.md") < page.index("_generated/track_record.md")
-    for heading in ("Live chart", "Tomorrow's call", "Track record", "Method"):
+    for heading in ("NVIDIA headlines", "Live chart", "Tomorrow's call", "Track record", "Method"):
         assert f"## {heading}" in page
 
 

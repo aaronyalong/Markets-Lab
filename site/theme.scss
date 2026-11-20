@@ -87,6 +87,39 @@ a:hover {
   }
 }
 
+// "by Aaron Yalong" after the site name, quieter than the name itself.
+.navbar-brand .brand-by {
+  font-weight: 400;
+  font-size: 0.85em;
+  letter-spacing: 0;
+  color: $lab-muted;
+}
+
+// Below the width where the menu collapses there is no room for one line, so
+// the byline sits under the name instead of being cut off.
+@media (max-width: 991.98px) {
+  .navbar-brand .navbar-title {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.15;
+  }
+
+  .navbar-brand .brand-by {
+    font-size: 0.7em;
+  }
+}
+
+// The narrowest phones: drop the square mark so the name is never clipped.
+@media (max-width: 379.98px) {
+  .navbar-brand {
+    font-size: 1.05rem;
+
+    &::before {
+      display: none;
+    }
+  }
+}
+
 .navbar .nav-link {
   font-weight: 500;
 }
@@ -220,7 +253,9 @@ a:hover {
   margin: 0 auto;
   padding: 0 1.5rem;
 
-  &:last-of-type {
+  // The last band on a page, whichever element Pandoc made it (a band that
+  // starts with a heading becomes a <section>, so :last-of-type picks wrongly).
+  &:not(:has(~ .band)) {
     padding-bottom: 4.5rem;
   }
 }
@@ -241,6 +276,19 @@ a:hover {
   letter-spacing: -0.02em;
   border: 0;
   margin: 0.4rem 0 1.75rem;
+  padding: 0;
+}
+
+// A one-line section label: small like an eyebrow, but a real heading.
+.section-label > h2 {
+  font-family: $font-family-monospace;
+  font-size: 0.85rem;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: $lab-accent;
+  border: 0;
+  margin: 0 0 1.75rem;
   padding: 0;
 }
 
@@ -394,54 +442,6 @@ a:hover {
   }
 }
 
-// ------------------------------------------------------------------- home: steps
-
-.steps {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 1rem;
-}
-
-.step {
-  position: relative;
-  padding: 1.4rem 1.3rem 1.2rem;
-  border-radius: 16px;
-  border: 1px solid $lab-border;
-  background: linear-gradient(180deg, rgba($lab-panel, 0.95), rgba($lab-panel, 0.45));
-  transition:
-    transform 0.25s ease,
-    border-color 0.25s ease;
-
-  &:hover {
-    transform: translateY(-4px);
-    border-color: rgba($lab-accent, 0.55);
-  }
-
-  .bi {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 2.6rem;
-    height: 2.6rem;
-    border-radius: 12px;
-    font-size: 1.2rem;
-    color: $lab-accent;
-    background: rgba($lab-accent, 0.12);
-    border: 1px solid rgba($lab-accent, 0.25);
-  }
-
-  h4 {
-    font-size: 1.08rem;
-    margin: 1rem 0 0.4rem;
-  }
-
-  p {
-    color: $lab-muted;
-    font-size: 0.95rem;
-    margin: 0;
-  }
-}
-
 // ------------------------------------------------------------------- home: cards
 
 .card-grid {
@@ -503,7 +503,6 @@ a:hover {
   }
 
   p:last-child {
-    margin-top: auto;
     margin-bottom: 0;
   }
 }
@@ -528,11 +527,18 @@ a:hover {
     box-shadow: 0 26px 70px rgba($lab-accent, 0.3);
   }
 
+  // The title is the card's one link; it keeps the heading's colour.
   .card-link {
-    font-weight: 500;
+    color: inherit;
+    font-weight: inherit;
+    text-decoration: none;
   }
 
-  // Make the whole card clickable through its one link.
+  .card-link .arrow {
+    color: $lab-accent;
+  }
+
+  // Make the whole card clickable through that link.
   .card-link::after {
     content: "";
     position: absolute;
@@ -917,9 +923,47 @@ a:hover {
   }
 }
 
-.byline-home {
-  font-size: 0.95rem !important;
-  margin: 1.5rem 0 0 !important;
+// Collected headlines: the title is the link, with publisher and time beneath.
+.news-list {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+  border: 1px solid $lab-border;
+  border-radius: 16px;
+  background: $lab-panel;
+  overflow: hidden;
+
+  li {
+    padding: 0.85rem 1.1rem;
+    border-bottom: 1px solid $lab-border;
+
+    &:last-child {
+      border-bottom: 0;
+    }
+
+    &:hover {
+      background: rgba($lab-accent, 0.05);
+    }
+  }
+
+  a {
+    display: block;
+    color: $lab-text;
+    font-weight: 500;
+
+    &:hover {
+      color: $lab-green;
+    }
+  }
+
+  .news-meta {
+    display: block;
+    margin-top: 0.2rem;
+    font-family: $font-family-monospace;
+    font-size: 0.76rem;
+    letter-spacing: 0.04em;
+    color: $lab-muted;
+  }
 }
 
 // ------------------------------------------------------------------ inner pages
@@ -1049,17 +1093,7 @@ table {
     gap: 2rem;
   }
 
-  .steps {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .card-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 36rem) {
-  .steps {
     grid-template-columns: 1fr;
   }
 }

@@ -3,8 +3,8 @@ name: Deploy site
 # Renders the Quarto site and publishes it to Cloudflare as static files.
 # Research only, not financial advice.
 #
-# Runs on every push to main, on demand, and after each successful nightly run.
-# The last trigger is needed because the nightly job pushes with the workflow's own
+# Runs on every push to main, on demand, and after each successful nightly or news
+# run. The last trigger is needed because those jobs push with the workflow's own
 # token, and GitHub does not start push-triggered workflows for those commits.
 #
 # Nothing is published unless the site renders, the tests pass against the built
@@ -14,7 +14,7 @@ on:
   push:
     branches: [main]
   workflow_run:
-    workflows: ["Nightly NVDA prediction"]
+    workflows: ["Nightly NVDA prediction", "NVDA news"]
     types: [completed]
   workflow_dispatch:
 

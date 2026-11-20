@@ -29,12 +29,14 @@ from markets_lab.analysis.nvda.site_page import (
     cumulative_scores,
     findings,
     main,
+    news_fragment,
     status_fragment,
     tomorrow_fragment,
     track_record,
     track_record_fragment,
 )
 from markets_lab.analysis.nvda.validation import WalkForwardConfig
+from markets_lab.collectors.nvda_news import Collection, NewsItem, save_day
 from nvda_test_predictors import LeastSquaresLearner
 from price_frames import at, make_prices
 
@@ -162,6 +164,62 @@ class TestStatusStrip:
             text = text_of(fragment).lower()
             assert "experiment · not advice" in text
             assert not re.search(r"\b(buy|sell|signal|recommend\w*|bullish|bearish)\b", text)
+
+
+def headline(hour: int, title: str, url: str | None = None) -> NewsItem:
+    return NewsItem(
+        source="yahoo_finance",
+        publisher="Example Wire",
+        title=title,
+        url=url or f"https://news.example.org/{hour}",
+        published_at=at(f"{MON} {hour:02d}:00"),
+    )
+
+
+def news_day(*items: NewsItem) -> Collection:
+    return Collection(at(f"{TUE} 11:00"), 24, tuple(items), ())
+
+
+class TestNews:
+    def test_before_anything_is_collected(self) -> None:
+        assert "No headlines have been collected yet." in text_of(news_fragment([]))
+
+    def test_a_quiet_spell_says_so(self) -> None:
+        assert "No NVIDIA headlines in the last few days." in text_of(news_fragment([news_day()]))
+
+    def test_each_headline_links_out_with_its_publisher_and_time(self) -> None:
+        fragment = news_fragment([news_day(headline(9, "NVIDIA ships a thing"))])
+        assert (
+            '<a href="https://news.example.org/9" target="_blank" rel="noopener nofollow">'
+            "NVIDIA ships a thing</a>"
+        ) in fragment
+        text = text_of(fragment)
+        assert "Example Wire ·" in text and "09:00 UTC" in text
+
+    def test_newest_first_capped_and_without_duplicates_across_days(self) -> None:
+        many = [headline(hour, f"Headline {hour}") for hour in range(1, 13)]
+        repeat = headline(12, "Headline 12")
+        fragment = news_fragment([news_day(*many), news_day(repeat)])
+        titles = re.findall(r'rel="noopener nofollow">([^<]+)</a>', fragment)
+        assert titles == [f"Headline {hour}" for hour in range(12, 4, -1)]
+
+    def test_markup_in_a_headline_is_shown_as_text_never_run(self) -> None:
+        hostile = headline(9, '<script>alert(1)</script> "NVIDIA" <img src=x onerror=y>')
+        fragment = news_fragment([news_day(hostile)])
+        assert "<script>alert" not in fragment and "<img" not in fragment
+        assert "&lt;script&gt;alert(1)&lt;/script&gt;" in fragment
+
+    def test_a_link_cannot_break_out_of_its_attribute(self) -> None:
+        odd = headline(9, "NVIDIA", url='https://news.example.org/a"onmouseover="x')
+        fragment = news_fragment([news_day(odd)])
+        assert 'onmouseover="x"' not in fragment
+        assert "&quot;onmouseover=&quot;x" in fragment
+
+    def test_it_says_whose_words_these_are(self) -> None:
+        text = text_of(news_fragment([news_day(headline(9, "NVIDIA ships a thing"))]))
+        assert "Collected automatically on 19 Mar 2030, 11:00 UTC" in text
+        assert "their publishers' words, not this site's" in text
+        assert "Not advice." in text
 
 
 class TestTrackRecord:
@@ -317,6 +375,7 @@ class TestWhatIsPublished:
         assert set(fragments) == {
             "plotly.md",
             "status.md",
+            "news.md",
             "tomorrow.md",
             "track_record.md",
             "backtest.md",
@@ -372,6 +431,7 @@ class TestCommandLine:
         written = sorted(p.name for p in (tmp_path / "site" / "_generated").iterdir())
         assert written == [
             "backtest.md",
+            "news.md",
             "plotly.md",
             "status.md",
             "tomorrow.md",
@@ -390,6 +450,27 @@ class TestCommandLine:
         assert main(["--site-dir", str(tmp_path / "site")], report=lambda _line: None) == 0
         tomorrow = (tmp_path / "site" / "_generated" / "tomorrow.md").read_text()
         assert "Monday 18 March 2030" in tomorrow
+
+    def test_reads_the_collected_headlines_next_to_the_site(
+        self, tmp_path: Path, report: dict[str, Any]
+    ) -> None:
+        self.write_report(tmp_path, report)
+        save_day(news_day(headline(9, "NVIDIA ships a thing")), tmp_path / "news" / "nvda")
+        assert main(["--site-dir", str(tmp_path / "site")], report=lambda _line: None) == 0
+        generated = (tmp_path / "site" / "_generated" / "news.md").read_text()
+        assert "NVIDIA ships a thing" in generated
+
+    def test_a_tampered_news_file_fails_the_build(
+        self, tmp_path: Path, report: dict[str, Any]
+    ) -> None:
+        self.write_report(tmp_path, report)
+        folder = tmp_path / "news" / "nvda"
+        path = save_day(news_day(headline(9, "NVIDIA ships a thing")), folder)
+        assert path is not None
+        path.write_text(path.read_text().replace("https://", "javascript://"))
+        lines: list[str] = []
+        assert main(["--site-dir", str(tmp_path / "site")], report=lines.append) == 1
+        assert "stored news file is not valid" in lines[0]
 
     def test_missing_report_fails(self, tmp_path: Path) -> None:
         (tmp_path / "site").mkdir()
