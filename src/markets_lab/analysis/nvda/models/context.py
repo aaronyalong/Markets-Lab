@@ -14,6 +14,7 @@ import pandas as pd
 
 from markets_lab.analysis.nvda.context_features import EXTENDED_FEATURE_COLUMNS
 from markets_lab.analysis.nvda.models.logistic import LogisticRegressionModel
+from markets_lab.analysis.nvda.models.xgb import XGBoostModel
 
 
 def require_context_columns(features: pd.DataFrame) -> None:
@@ -30,6 +31,16 @@ class LogisticContextModel(LogisticRegressionModel):
     """Logistic regression on the technical, market context and results columns."""
 
     name = "logistic_ctx"
+
+    def fit(self, features: pd.DataFrame, target_up: pd.Series) -> None:
+        require_context_columns(features)
+        super().fit(features, target_up)
+
+
+class XGBoostContextModel(XGBoostModel):
+    """Gradient-boosted trees on the technical, market context and results columns."""
+
+    name = "xgboost_ctx"
 
     def fit(self, features: pd.DataFrame, target_up: pd.Series) -> None:
         require_context_columns(features)

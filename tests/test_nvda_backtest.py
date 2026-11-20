@@ -25,7 +25,6 @@ from markets_lab.analysis.nvda.backtest import (
 from markets_lab.analysis.nvda.context_features import build_context_dataset
 from markets_lab.analysis.nvda.features import Dataset, build_dataset
 from markets_lab.analysis.nvda.metrics import BootstrapConfig
-from markets_lab.analysis.nvda.models.context import LogisticContextModel
 from markets_lab.analysis.nvda.validation import WalkForwardConfig
 from markets_lab.collectors.nvda_earnings import save_json
 from markets_lab.collectors.nvda_prices import save_csv
@@ -186,7 +185,7 @@ class TestReportContents:
     def test_registered_baselines_and_models(self) -> None:
         assert list(BASELINE_FACTORIES) == ["always_up", "persistence", "ma_200"]
         assert list(MODEL_FACTORIES) == ["logistic", "xgboost", "lstm"]
-        assert list(CONTEXT_MODEL_FACTORIES) == ["logistic_ctx"]
+        assert list(CONTEXT_MODEL_FACTORIES) == ["logistic_ctx", "xgboost_ctx"]
 
     def test_a_later_model_is_also_compared_with_earlier_models(self, dataset: Dataset) -> None:
         result = run_backtest(
@@ -283,18 +282,29 @@ class TestContextModels:
                 config=CONFIG,
             )
 
-    def test_the_registered_context_model_refuses_the_technical_columns_alone(
-        self, dataset: Dataset, extended: Dataset
+    @pytest.mark.parametrize("name", list(CONTEXT_MODEL_FACTORIES))
+    def test_a_registered_context_model_refuses_the_technical_columns_alone(
+        self, dataset: Dataset, extended: Dataset, name: str
     ) -> None:
         # Otherwise it would quietly be a copy of its twin.
         known = dataset.labelled()
         with pytest.raises(ValueError, match="needs the technical, context and results columns"):
-            LogisticContextModel().fit(known.features, known.target_up)
+            CONTEXT_MODEL_FACTORIES[name]().fit(known.features, known.target_up)
         wide = extended.labelled()
-        model = LogisticContextModel()
+        model = CONTEXT_MODEL_FACTORIES[name]()
         model.fit(wide.features, wide.target_up)
-        assert model.name == "logistic_ctx"
-        assert len(model.coefficients()) == wide.features.shape[1]
+        assert model.name == name
+
+    @pytest.mark.parametrize("name", list(CONTEXT_MODEL_FACTORIES))
+    def test_a_context_model_is_its_twin_with_only_the_inputs_changed(self, name: str) -> None:
+        twin_name = name.removesuffix("_ctx")
+        assert name == f"{twin_name}_ctx"
+        twin, model = MODEL_FACTORIES[twin_name], CONTEXT_MODEL_FACTORIES[name]
+        assert isinstance(twin, type) and isinstance(model, type)
+        assert issubclass(model, twin)
+        # Nothing but the name and the column check is overridden: same settings.
+        overridden = {key for key in vars(model) if not key.startswith("__")}
+        assert overridden == {"name", "fit"}
 
 
 class TestReportHoldsAggregatesOnly:
@@ -383,6 +393,7 @@ class TestCommandLine:
             "xgboost",
             "lstm",
             "logistic_ctx",
+            "xgboost_ctx",
         ]
         assert written["predictors"]["logistic"]["inputs"] == "technical"
         assert written["predictors"]["logistic_ctx"]["inputs"].startswith("technical, market")

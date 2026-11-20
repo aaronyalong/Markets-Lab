@@ -51,7 +51,7 @@ from markets_lab.analysis.nvda.metrics import (
     trade_count,
     wilson_interval,
 )
-from markets_lab.analysis.nvda.models.context import LogisticContextModel
+from markets_lab.analysis.nvda.models.context import LogisticContextModel, XGBoostContextModel
 from markets_lab.analysis.nvda.models.logistic import LogisticRegressionModel
 from markets_lab.analysis.nvda.models.lstm import LSTMModel
 from markets_lab.analysis.nvda.models.xgb import XGBoostModel
@@ -90,6 +90,7 @@ MODEL_FACTORIES: dict[str, PredictorFactory] = {
 
 CONTEXT_MODEL_FACTORIES: dict[str, PredictorFactory] = {
     "logistic_ctx": LogisticContextModel,
+    "xgboost_ctx": XGBoostContextModel,
 }
 """The same models on the wider inputs, also added one at a time."""
 

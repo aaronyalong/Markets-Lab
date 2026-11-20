@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-20T08:39:18Z",
+  "generated_at": "2026-11-20T08:51:17Z",
   "symbol": "NVDA",
   "data": {
     "sessions_with_features": 6802,
@@ -354,6 +354,52 @@
           "sharpe_ratio": 0.643997
         }
       }
+    },
+    "xgboost_ctx": {
+      "kind": "model",
+      "inputs": "technical, market context and results dates",
+      "sessions": 5541,
+      "hits": 2792,
+      "accuracy": 0.50388,
+      "accuracy_interval": [
+        0.490717,
+        0.517038
+      ],
+      "share_called_up": 0.596824,
+      "brier_score": 0.254636,
+      "trades": 1927,
+      "returns_by_cost_bps": {
+        "0": {
+          "total_return": 266.958508,
+          "annualised_return": 0.289515,
+          "annualised_return_interval": [
+            0.124439,
+            0.48708
+          ],
+          "annualised_volatility": 0.349469,
+          "sharpe_ratio": 0.901588
+        },
+        "5": {
+          "total_return": 101.216304,
+          "annualised_return": 0.234216,
+          "annualised_return_interval": [
+            0.075856,
+            0.424217
+          ],
+          "annualised_volatility": 0.349494,
+          "sharpe_ratio": 0.77605
+        },
+        "10": {
+          "total_return": 37.972957,
+          "annualised_return": 0.181263,
+          "annualised_return_interval": [
+            0.029587,
+            0.363033
+          ],
+          "annualised_volatility": 0.34956,
+          "sharpe_ratio": 0.650454
+        }
+      }
     }
   },
   "comparisons": [
@@ -669,6 +715,111 @@
       "annualised_return_difference_interval": [
         -0.167492,
         0.120269
+      ],
+      "cost_bps": 5
+    },
+    {
+      "predictor": "xgboost_ctx",
+      "reference": "always_up",
+      "accuracy_difference": -0.020213,
+      "accuracy_difference_interval": [
+        -0.036821,
+        -0.003064
+      ],
+      "annualised_return_difference": -0.139705,
+      "annualised_return_difference_interval": [
+        -0.34224,
+        0.047869
+      ],
+      "cost_bps": 5
+    },
+    {
+      "predictor": "xgboost_ctx",
+      "reference": "persistence",
+      "accuracy_difference": 0.016784,
+      "accuracy_difference_interval": [
+        -0.002712,
+        0.035919
+      ],
+      "annualised_return_difference": 0.206919,
+      "annualised_return_difference_interval": [
+        0.04017,
+        0.387382
+      ],
+      "cost_bps": 5
+    },
+    {
+      "predictor": "xgboost_ctx",
+      "reference": "ma_200",
+      "accuracy_difference": -0.01913,
+      "accuracy_difference_interval": [
+        -0.036636,
+        -0.002707
+      ],
+      "annualised_return_difference": -0.162803,
+      "annualised_return_difference_interval": [
+        -0.344085,
+        0.013289
+      ],
+      "cost_bps": 5
+    },
+    {
+      "predictor": "xgboost_ctx",
+      "reference": "logistic",
+      "accuracy_difference": -0.00379,
+      "accuracy_difference_interval": [
+        -0.019135,
+        0.011189
+      ],
+      "annualised_return_difference": -0.01105,
+      "annualised_return_difference_interval": [
+        -0.161788,
+        0.138415
+      ],
+      "cost_bps": 5
+    },
+    {
+      "predictor": "xgboost_ctx",
+      "reference": "xgboost",
+      "accuracy_difference": -0.001985,
+      "accuracy_difference_interval": [
+        -0.014979,
+        0.011189
+      ],
+      "annualised_return_difference": 0.013474,
+      "annualised_return_difference_interval": [
+        -0.106704,
+        0.141464
+      ],
+      "cost_bps": 5
+    },
+    {
+      "predictor": "xgboost_ctx",
+      "reference": "lstm",
+      "accuracy_difference": -0.01155,
+      "accuracy_difference_interval": [
+        -0.027436,
+        0.00397
+      ],
+      "annualised_return_difference": -0.031932,
+      "annualised_return_difference_interval": [
+        -0.178512,
+        0.108537
+      ],
+      "cost_bps": 5
+    },
+    {
+      "predictor": "xgboost_ctx",
+      "reference": "logistic_ctx",
+      "accuracy_difference": -0.007038,
+      "accuracy_difference_interval": [
+        -0.022203,
+        0.009204
+      ],
+      "annualised_return_difference": -0.011377,
+      "annualised_return_difference_interval": [
+        -0.166653,
+        0.133543
       ],
       "cost_bps": 5
     }
