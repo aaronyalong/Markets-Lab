@@ -15,7 +15,9 @@ website:
   site-url: "https://markets.aaronyalong.com"
   description: "Hobby research on markets: every result has a baseline, an honest uncertainty, and no advice."
   navbar:
-    left:
+    # The brand carries the byline; page titles still use the plain site title.
+    title: "Markets Lab [by Aaron Yalong]{.brand-by}"
+    right:
       - href: index.qmd
         text: Home
       - text: Experiments
