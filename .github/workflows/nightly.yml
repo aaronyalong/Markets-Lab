@@ -5,12 +5,16 @@ name: Nightly NVDA prediction
 #
 # Timing: predictions must be written before the US market opens (09:30 New York,
 # which is 13:30 or 14:30 UTC). Yahoo can take hours after the close to publish the
-# final bar, so the job runs in the morning, twice. The second run is a retry and
-# adds nothing if the first one succeeded. GitHub may start scheduled jobs late;
-# both times leave more than an hour of margin.
+# final bar (seen once: between 21:00 and 21:28 New York), so the job runs four
+# times from late evening to the morning. Every run after the first successful one
+# is a retry and adds nothing. GitHub may start scheduled jobs many hours late (seen
+# 2026-11-19: both of that day's runs started about 8.5 hours late, after the open),
+# so the two evening times are early enough to absorb a delay of that size.
 
 on:
   schedule:
+    - cron: "30 3 * * *" # 22:30 or 23:30 New York, the evening of the session
+    - cron: "30 6 * * *" # 01:30 or 02:30 New York
     - cron: "30 10 * * *" # 05:30 or 06:30 New York
     - cron: "15 12 * * *" # 07:15 or 08:15 New York
   workflow_dispatch:

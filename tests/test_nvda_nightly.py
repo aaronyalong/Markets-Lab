@@ -409,6 +409,9 @@ class TestWorkflowFile:
 
     def test_runs_before_the_market_opens_and_has_a_clear_bot_message(self) -> None:
         text = WORKFLOW.read_text()
+        # Two evening times absorb a start many hours late; see the workflow's notes.
+        assert 'cron: "30 3 * * *"' in text
+        assert 'cron: "30 6 * * *"' in text
         assert 'cron: "30 10 * * *"' in text
         assert 'cron: "15 12 * * *"' in text
         assert 'git commit -m "bot: append NVDA outcomes and predictions' in text
