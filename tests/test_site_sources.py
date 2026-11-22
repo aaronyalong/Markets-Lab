@@ -219,14 +219,26 @@ def test_nvidia_page_has_the_chart_the_notice_and_every_generated_section() -> N
         "news",
         "plotly",
         "tomorrow",
+        "range",
         "track_record",
+        "range_record",
         "backtest",
+        "range_backtest",
         "updated",
     ):
         assert f"{{{{< include /_generated/{fragment}.md >}}}}" in page
     # The chart library must be loaded before the first chart on the page.
     assert page.index("_generated/plotly.md") < page.index("_generated/track_record.md")
-    for heading in ("NVIDIA headlines", "Live chart", "Tomorrow's call", "Track record", "Method"):
+    # The chart library must also come before the range chart further down.
+    assert page.index("_generated/plotly.md") < page.index("_generated/range_backtest.md")
+    for heading in (
+        "NVIDIA headlines",
+        "Live chart",
+        "Tomorrow's call",
+        "Tomorrow's range",
+        "Track record",
+        "Method",
+    ):
         assert f"## {heading}" in page
 
 
@@ -269,7 +281,8 @@ def test_built_canonical_links_and_sitemap_use_the_addresses_the_host_serves() -
 def test_headline_numbers_are_in_the_built_html_without_javascript() -> None:
     page = (BUILT / "experiments" / "nvidia.html").read_text()
     numbers = re.findall(r'<div class="big-number">([^<]+)</div>', page)
-    assert len(numbers) == 3
+    # Three for the direction backtest and three for the range backtest.
+    assert len(numbers) == 6
     assert all(re.search(r"\d", number) for number in numbers)
 
 

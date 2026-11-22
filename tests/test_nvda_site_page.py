@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import functools
 import html
 import json
 import re
@@ -38,6 +39,8 @@ from markets_lab.analysis.nvda.site_page import (
     track_record_fragment,
 )
 from markets_lab.analysis.nvda.validation import WalkForwardConfig
+from markets_lab.analysis.nvda.volatility import backtest as volatility_backtest
+from markets_lab.analysis.nvda.volatility.dataset import build_volatility_dataset
 from markets_lab.collectors.nvda_news import Collection, NewsItem, save_day
 from nvda_test_predictors import LeastSquaresLearner
 from price_frames import at, make_prices
@@ -64,6 +67,62 @@ def log_records() -> list[Record]:
         went(MON, FRI, False),  # always_up wrong, logistic right
         call(MON, "always_up", True),
         call(MON, "logistic", True, 0.5312),
+    ]
+
+
+@functools.cache
+def volatility_report() -> dict[str, Any]:
+    """The volatility backtest's report on made-up prices, with every forecaster."""
+    return volatility_backtest.run_backtest(
+        build_volatility_dataset(make_prices(rows=900)),
+        config=WalkForwardConfig(initial_train_sessions=300, refit_every=50),
+        bootstrap=BootstrapConfig(n_resamples=100),
+    )
+
+
+@pytest.fixture
+def volatility() -> dict[str, Any]:
+    return copy.deepcopy(volatility_report())
+
+
+def with_verdicts(report: dict[str, Any], **verdicts: tuple[str, str]) -> dict[str, Any]:
+    """The report with each named model's two differences from the simple baseline
+    set to "better", "worse" or "same" (volatility score first, then range score)."""
+    intervals = {"better": [-0.2, -0.1], "worse": [0.1, 0.2], "same": [-0.1, 0.1]}
+    changed = copy.deepcopy(report)
+    for row in changed["comparisons"]:
+        if row["reference"] == "ewma_94" and row["forecaster"] in verdicts:
+            volatility_verdict, range_verdict = verdicts[row["forecaster"]]
+            row["qlike_difference_interval"] = intervals[volatility_verdict]
+            row["interval_score_difference_interval"] = intervals[range_verdict]
+    return changed
+
+
+def ranged(day: date, model: str, lower: float = -0.03, upper: float = 0.04) -> RangeForecast:
+    return RangeForecast(at(f"{day} 18:00"), day, model, 0.8, lower, upper)
+
+
+def fell(day: date, previous: date, model: str, position: str) -> RangeOutcome:
+    return RangeOutcome(at(f"{day} 17:30"), day, previous, model, position)
+
+
+FORECASTERS = ["constant", "rolling_21", "ewma_94", "har", "xgboost_vol"]
+
+
+def range_records() -> list[Record]:
+    """Two sessions of ranges from every forecaster; the first has been scored."""
+    return [
+        *(ranged(THU, name) for name in FORECASTERS),
+        went(FRI, THU, True),
+        *(
+            fell(FRI, THU, name, "above" if name == "constant" else "inside")
+            for name in FORECASTERS
+        ),
+        ranged(FRI, "constant", -0.036, 0.04),
+        ranged(FRI, "rolling_21", -0.051, 0.056),
+        ranged(FRI, "ewma_94", -0.0558, 0.0616),
+        ranged(FRI, "har", -0.074, 0.084),
+        ranged(FRI, "xgboost_vol", -0.05, 0.055),
     ]
 
 
@@ -412,10 +471,10 @@ class TestBacktestFragment:
 
 class TestWhatIsPublished:
     def test_range_records_in_the_log_do_not_disturb_the_direction_fragments(
-        self, report: dict[str, Any]
+        self, report: dict[str, Any], volatility: dict[str, Any]
     ) -> None:
         # The nightly job writes range forecasts and their outcomes into the same
-        # log. Until the page shows them, they must change nothing here.
+        # log. They have their own fragments and must change nothing in the others.
         with_ranges = [
             *log_records()[:2],
             RangeForecast(at(f"{THU} 18:00"), THU, "ewma_94", 0.8, -0.03, 0.04),
@@ -424,17 +483,28 @@ class TestWhatIsPublished:
             *log_records()[3:],
             RangeForecast(at(f"{MON} 18:00"), MON, "ewma_94", 0.8, -0.03, 0.04),
         ]
-        assert build_fragments(report, with_ranges) == build_fragments(report, log_records())
+        mixed = build_fragments(report, with_ranges, volatility=volatility)
+        plain = build_fragments(report, log_records(), volatility=volatility)
+        about_direction = [name for name in plain if not name.startswith("range")]
+        assert len(about_direction) == 6
+        for name in about_direction:
+            assert mixed[name] == plain[name]
+        assert mixed["range.md"] != plain["range.md"]
 
-    def test_fragments_are_raw_html_blocks(self, report: dict[str, Any]) -> None:
-        fragments = build_fragments(report, log_records())
+    def test_fragments_are_raw_html_blocks(
+        self, report: dict[str, Any], volatility: dict[str, Any]
+    ) -> None:
+        fragments = build_fragments(report, [*log_records(), *[]], volatility=volatility)
         assert set(fragments) == {
             "plotly.md",
             "status.md",
             "news.md",
             "tomorrow.md",
+            "range.md",
             "track_record.md",
+            "range_record.md",
             "backtest.md",
+            "range_backtest.md",
         }
         for content in fragments.values():
             assert content.startswith("```{=html}\n")
@@ -442,23 +512,27 @@ class TestWhatIsPublished:
             assert content.count("```") == 2
 
     def test_the_chart_library_is_loaded_once_from_a_pinned_version(
-        self, report: dict[str, Any]
+        self, report: dict[str, Any], volatility: dict[str, Any]
     ) -> None:
-        fragments = build_fragments(report, log_records())
+        fragments = build_fragments(report, log_records(), volatility=volatility)
         assert re.search(
             r'src="https://cdn\.plot\.ly/plotly-\d+\.\d+\.\d+\.min\.js"', fragments["plotly.md"]
         )
-        for name in ("tomorrow.md", "track_record.md", "backtest.md"):
-            assert "cdn.plot.ly" not in fragments[name]
+        for name in fragments:
+            if name != "plotly.md":
+                assert "cdn.plot.ly" not in fragments[name]
 
-    def test_no_price_from_the_input_appears_anywhere(self, report: dict[str, Any]) -> None:
+    def test_no_price_from_the_input_appears_anywhere(
+        self, report: dict[str, Any], volatility: dict[str, Any]
+    ) -> None:
         prices = make_prices(rows=900)
         raw = {
             f"{float(v):.4f}"
             for column in ("open", "high", "low", "close", "adj_close")
             for v in prices[column]
         }
-        everything = "".join(build_fragments(report, log_records()).values())
+        records = [*range_records(), *log_records()[3:]]
+        everything = "".join(build_fragments(report, records, volatility=volatility).values())
         numbers = set(re.findall(r"\d+\.\d{4}", everything))
         assert not numbers & raw
 
@@ -472,10 +546,232 @@ class TestWhatIsPublished:
             assert "<b>bold</b>" not in fragment
 
 
+MINUS = "\u2212"
+THE_FINDING = (
+    "None of the models clearly beat the simple baseline in the backtest, and the live "
+    "record below will show whether that holds."
+)
+
+
+class TestRangeFinding:
+    """The one sentence on the panel is worded from the report, not typed in."""
+
+    def test_no_model_better_on_both_scores_gives_the_agreed_sentence(
+        self, volatility: dict[str, Any]
+    ) -> None:
+        mixed = with_verdicts(volatility, har=("better", "same"), xgboost_vol=("same", "better"))
+        assert site_page.clearly_beat_the_baseline(mixed) == []
+        assert site_page.range_finding(mixed) == THE_FINDING
+
+    def test_better_on_one_score_only_is_not_clearly_better(
+        self, volatility: dict[str, Any]
+    ) -> None:
+        for verdicts in (
+            ("better", "same"),
+            ("same", "better"),
+            ("better", "worse"),
+            ("same", "same"),
+        ):
+            report = with_verdicts(volatility, har=verdicts, xgboost_vol=("same", "same"))
+            assert site_page.range_finding(report) == THE_FINDING
+
+    def test_a_model_better_on_both_scores_changes_the_sentence(
+        self, volatility: dict[str, Any]
+    ) -> None:
+        one = with_verdicts(volatility, har=("better", "better"), xgboost_vol=("same", "same"))
+        assert site_page.clearly_beat_the_baseline(one) == ["har"]
+        assert site_page.range_finding(one) == (
+            "One of the models clearly beat the simple baseline in the backtest, and the live "
+            "record below will show whether that holds."
+        )
+        both = with_verdicts(volatility, har=("better", "better"), xgboost_vol=("better", "better"))
+        assert site_page.range_finding(both).startswith("Both models clearly beat")
+
+    def test_a_baseline_never_counts_as_a_model(self, volatility: dict[str, Any]) -> None:
+        only = copy.deepcopy(volatility)
+        for name in ("har", "xgboost_vol"):
+            del only["forecasters"][name]
+        only["comparisons"] = [
+            row for row in only["comparisons"] if row["forecaster"] not in ("har", "xgboost_vol")
+        ]
+        assert site_page.range_finding(only).startswith("Only the simple baselines")
+
+    def test_the_backtest_findings_say_how_each_model_did_on_each_score(
+        self, volatility: dict[str, Any]
+    ) -> None:
+        report = with_verdicts(volatility, har=("better", "same"), xgboost_vol=("worse", "better"))
+        lines = site_page.range_findings(report)
+        assert (
+            "Three-speed regression, against the simple baseline: its volatility forecast was "
+            "measurably better and its ranges were not measurably different." in lines
+        )
+        assert (
+            "XGBoost (volatility), against the simple baseline: its volatility forecast was "
+            "measurably worse and its ranges were measurably better." in lines
+        )
+        assert lines[0].endswith("beat assuming volatility is always its long-run average.")
+        assert lines[0].split(" that look")[0] in (
+            "All 4 forecasters",
+            "None of the forecasters",
+            "One of the forecasters",
+            "Two of the forecasters",
+            "Three of the forecasters",
+        )
+        coverage = report["forecasters"]["ewma_94"]["coverage"]
+        assert lines[-1] == (
+            f"The simple baseline's ranges held {100 * coverage:.1f}% of outcomes, against "
+            "the 80% they are built to hold."
+        )
+
+
+class TestRangeFragment:
+    def test_before_any_range_is_logged_it_says_so_and_still_states_the_finding(
+        self, volatility: dict[str, Any]
+    ) -> None:
+        text = text_of(site_page.range_fragment(log_records(), volatility))
+        assert "No range has been logged yet." in text
+        assert "clearly beat the simple baseline" in text
+
+    def test_the_simple_baseline_is_shown_first_with_its_range(
+        self, volatility: dict[str, Any]
+    ) -> None:
+        fragment = site_page.range_fragment(range_records(), volatility)
+        text = text_of(fragment)
+        assert "Range for the next session after Friday 15 March 2030" in text
+        assert f'<div class="range-number">{MINUS}5.6% to +6.2%</div>' in fragment
+        assert "<h4>Weighted recent average</h4>" in fragment
+        assert "baseline · 80% range" in text
+        assert "about 4 days in 5" in text
+        assert "It says nothing about which way." in text
+        assert "It has not been scored yet. An experiment, not advice." in text
+
+    def test_the_finding_sits_between_the_headline_and_the_table(
+        self, volatility: dict[str, Any]
+    ) -> None:
+        fragment = site_page.range_fragment(range_records(), volatility)
+        assert (
+            fragment.index('class="range-panel"')
+            < fragment.index('class="range-finding"')
+            < fragment.index("<table")
+        )
+
+    def test_every_forecaster_is_listed_baselines_first(self, volatility: dict[str, Any]) -> None:
+        fragment = site_page.range_fragment(range_records(), volatility)
+        table = fragment[fragment.index("<table") :]
+        names = [
+            "Long-run average",
+            "Last 21 sessions",
+            "Weighted recent average",
+            "Three-speed regression",
+            "XGBoost (volatility)",
+        ]
+        positions = [table.index(name) for name in names]
+        assert positions == sorted(positions)
+        assert f"{MINUS}7.4% to +8.4%" in table
+        assert table.count(">baseline<") == 3 and table.count(">model<") == 2
+
+    def test_a_range_is_never_shown_in_the_colours_or_arrows_of_direction(
+        self, volatility: dict[str, Any]
+    ) -> None:
+        fragments = (
+            site_page.range_fragment(range_records(), volatility),
+            site_page.range_record_fragment(range_records()),
+        )
+        for fragment in fragments:
+            assert not re.search(r'class="[^"]*\b(up|down)\b', fragment)
+            assert "▲" not in fragment and "▼" not in fragment
+            assert "big-number" not in fragment
+
+    def test_once_scored_it_says_where_the_move_fell(self, volatility: dict[str, Any]) -> None:
+        scored_only = range_records()[: 2 * len(FORECASTERS) + 1]
+        fragment = site_page.range_fragment(scored_only, volatility)
+        text = text_of(fragment)
+        assert "Latest ranges were for Friday 15 March 2030" in text
+        assert "The move was inside the range." in text
+        assert "<th>The move was</th>" in fragment
+        assert "above the range" in text  # the long-run average missed
+        assert "That session is over and these have been scored." in text
+
+    def test_without_the_simple_baseline_the_first_forecaster_leads(
+        self, volatility: dict[str, Any]
+    ) -> None:
+        fragment = site_page.range_fragment([ranged(THU, "har", -0.02, 0.05)], volatility)
+        assert "<h4>Three-speed regression</h4>" in fragment
+        assert "model · 80% range" in text_of(fragment)
+        assert f"{MINUS}2.0% to +5.0%" in fragment
+
+    def test_names_are_escaped(
+        self, monkeypatch: pytest.MonkeyPatch, volatility: dict[str, Any]
+    ) -> None:
+        monkeypatch.setitem(site_page.RANGE_NAMES, "ewma_94", "<b>bold</b> & co")
+        for fragment in (
+            site_page.range_fragment(range_records(), volatility),
+            site_page.range_record_fragment(range_records()),
+            site_page.range_backtest_fragment(volatility),
+        ):
+            assert "&lt;b&gt;bold&lt;/b&gt; &amp; co" in fragment
+            assert "<b>bold</b>" not in fragment
+
+
+class TestRangeRecord:
+    def test_before_any_range_is_logged(self) -> None:
+        assert "No ranges have been logged yet." in site_page.range_record_fragment(log_records())
+
+    def test_counts_shares_and_the_sample_size_warning(self) -> None:
+        fragment = site_page.range_record_fragment(range_records())
+        text = text_of(fragment)
+        assert "1 session has been scored so far." in text
+        assert "about 250 scored sessions" in text
+        assert "built to hold the outcome 80% of the time" in text
+        rows = re.findall(r"<tr><td>(.*?)</tr>", fragment)
+        by_name = {row.split("</td>")[0]: row for row in rows}
+        held = by_name["Weighted recent average"]
+        assert "<td>1</td><td>1</td><td>100.0%" in held
+        assert "<td>0 / 0</td>" in held and "<td>7.0 points</td>" in held
+        missed = by_name["Long-run average"]
+        assert "<td>1</td><td>0</td><td>0.0%" in missed
+        assert "<td>0 / 1</td>" in missed
+
+    def test_a_forecaster_with_nothing_scored_shows_no_share(self) -> None:
+        fragment = site_page.range_record_fragment([ranged(THU, "ewma_94")])
+        assert "0 sessions have been scored so far." in text_of(fragment)
+        assert "<td>0</td><td>0</td><td>n/a" in fragment
+        assert "<td>n/a</td></tr>" in fragment
+
+
+class TestRangeBacktest:
+    def test_headline_numbers_findings_chart_and_table(self, volatility: dict[str, Any]) -> None:
+        fragment = site_page.range_backtest_fragment(volatility)
+        text = text_of(fragment)
+        data = volatility["data"]
+        assert f"{data['tested_sessions']:,}" in text
+        assert f"{100 * data['mean_absolute_move']:.1f}%" in text
+        assert "was NVDA's average move in a day" in text
+        assert 'id="range-coverage-chart"' in fragment
+        assert fragment.count('class="stat"') == 3
+        for name in site_page.RANGE_NAMES.values():
+            assert name in fragment
+        for line in site_page.range_findings(volatility):
+            assert html.escape(line) in fragment
+
+    def test_the_chart_marks_the_share_the_range_is_built_for(
+        self, volatility: dict[str, Any]
+    ) -> None:
+        figure = site_page.coverage_figure(volatility).to_dict()
+        assert len(figure["data"]) == 5
+        assert any(
+            "Built to hold 80%" in str(a.get("text")) for a in figure["layout"]["annotations"]
+        )
+        shown = {trace["y"][0]: trace["x"][0] for trace in figure["data"]}
+        coverage = volatility["forecasters"]["ewma_94"]["coverage"]
+        assert shown["Weighted recent average"] == pytest.approx(100 * coverage)
+
+
 class TestCommandLine:
     def write_report(self, root: Path, report: dict[str, Any]) -> None:
         (root / "reports").mkdir()
         (root / "reports" / "nvda_backtest.json").write_text(json.dumps(report))
+        (root / "reports" / "nvda_volatility.json").write_text(json.dumps(volatility_report()))
 
     def test_writes_every_fragment_without_a_log(
         self, tmp_path: Path, report: dict[str, Any]
@@ -489,6 +785,9 @@ class TestCommandLine:
             "backtest.md",
             "news.md",
             "plotly.md",
+            "range.md",
+            "range_backtest.md",
+            "range_record.md",
             "status.md",
             "tomorrow.md",
             "track_record.md",
@@ -533,6 +832,15 @@ class TestCommandLine:
         lines: list[str] = []
         assert main(["--site-dir", str(tmp_path / "site")], report=lines.append) == 1
         assert "run the backtest first" in lines[0]
+
+    def test_missing_volatility_report_fails(self, tmp_path: Path, report: dict[str, Any]) -> None:
+        self.write_report(tmp_path, report)
+        (tmp_path / "reports" / "nvda_volatility.json").unlink()
+        (tmp_path / "site").mkdir()
+        lines: list[str] = []
+        assert main(["--site-dir", str(tmp_path / "site")], report=lines.append) == 1
+        assert "run the volatility backtest first" in lines[0]
+        assert not (tmp_path / "site" / "_generated").exists()
 
     def test_a_tampered_log_fails_the_build(self, tmp_path: Path, report: dict[str, Any]) -> None:
         self.write_report(tmp_path, report)

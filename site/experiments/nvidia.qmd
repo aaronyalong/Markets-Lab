@@ -88,6 +88,20 @@ do not use it; they work from daily closing data only.]{.muted .small}
 
 ::::: {.band}
 
+[The size of the move]{.eyebrow}
+
+## Tomorrow's range {.section-title}
+
+A separate question from direction: how big is the next session's move likely to
+be? Each forecaster gives a range that is meant to hold the move four days out of
+five. The first one shown is the simple baseline the others are measured against.
+
+{{< include /_generated/range.md >}}
+
+:::::
+
+::::: {.band}
+
 [Live, since the log started]{.eyebrow}
 
 ## Track record {.section-title}
@@ -99,6 +113,10 @@ enforced.
 {{< include /_generated/plotly.md >}}
 
 {{< include /_generated/track_record.md >}}
+
+### How the ranges have held up
+
+{{< include /_generated/range_record.md >}}
 
 :::::
 
@@ -112,6 +130,13 @@ Before going live, every baseline and model was tested on past data, always
 predicting a day using only the days before it.
 
 {{< include /_generated/backtest.md >}}
+
+### The size of the move, on the same history
+
+The range forecasters were tested on the same days in the same way: each range was
+made using only the days before it.
+
+{{< include /_generated/range_backtest.md >}}
 
 :::::
 
@@ -168,6 +193,25 @@ many sessions ago the latest came out, and whether they came out after that day'
 close. Results count only if the SEC had accepted the filing by 8 pm New York time
 that day, whatever time the call was actually written.
 
+### The range
+
+A second set of forecasters answers a different question: not which way, but how
+far. Each one estimates how volatile the next session will be, and that estimate is
+turned into a range meant to hold the session's move 80% of the time, with the
+misses split evenly below and above.
+
+- **Long-run average.** Volatility is always what it has been on average.
+- **Last 21 sessions.** The spread of the last 21 daily moves.
+- **Weighted recent average.** The same idea with newer moves counting for more.
+  This is the simple baseline the models have to beat, and the range shown first.
+- **Three-speed regression** and **XGBoost (volatility)**: two models that learn
+  how the last day, week and month of moves relate to the next one.
+
+The range is the forecast volatility times two numbers taken from past sessions
+only, so it does not assume moves follow a bell curve. Afterwards the log records
+whether the move fell inside the range, below it or above it, and nothing else
+about the move.
+
 ### The test
 
 Testing is walk-forward. A model is trained on the first five years, makes its
@@ -192,6 +236,8 @@ amount traded. Cash earns nothing in the simulation.
   the "+ context" versions also see market indices and when results came out. None
   of them reads the results themselves, the news or anything about the business.
 - **Simulated is not real.** No slippage, no taxes, no interest on cash.
+- **A range is not a direction.** It says how far the move may go, both ways, and
+  it is wrong by design one day in five.
 - **The data source is unofficial.** Daily prices come from Yahoo Finance and are
   checked before use, but they are not guaranteed.
 
