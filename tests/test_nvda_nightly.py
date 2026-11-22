@@ -3,33 +3,43 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
 import pytest
 
+from context_frames import context_for, make_publications, sec_getter, yahoo_downloader
 from markets_lab.analysis.nvda.backtest import (
     BASELINE_FACTORIES,
+    CONTEXT_MODEL_FACTORIES,
     MODEL_FACTORIES,
     PredictorFactory,
 )
+from markets_lab.analysis.nvda.context_features import EXTENDED_FEATURE_COLUMNS
 from markets_lab.analysis.nvda.features import build_dataset
+from markets_lab.analysis.nvda.models.context import LogisticContextModel
 from markets_lab.analysis.nvda.nightly import (
+    EXIT_CONTEXT_SKIPPED,
     NightlyError,
+    NightlyResult,
     default_factories,
     main,
     run_nightly,
 )
 from markets_lab.analysis.nvda.prediction_log import (
+    LogError,
     Outcome,
     Prediction,
+    append_records,
     parse_log,
     read_log,
     scored_predictions,
 )
 from markets_lab.analysis.nvda.predictors import prediction_frame
+from markets_lab.collectors.nvda_earnings import ResultsPublication
 from nvda_test_predictors import LeastSquaresLearner
 from price_frames import as_yahoo, at, make_prices, with_extra_row
 
@@ -68,6 +78,7 @@ def nightly(
         log_path=log,
         downloader=lambda _symbol: as_yahoo(prices),
         factories=FACTORIES if factories is None else factories,
+        context_factories={},
         dry_run=dry_run,
         min_rows=100,
     )
@@ -294,6 +305,7 @@ class TestDryRunAndCommandLine:
             now=lambda: now,
             downloader=downloader or (lambda _symbol: as_yahoo(prices)),
             factories=FACTORIES,
+            context_factories={},
             report=lines.append,
             min_rows=100,
         )
@@ -365,6 +377,283 @@ class TestDryRunAndCommandLine:
         assert log.read_bytes() == corrupt
 
 
+SIX = list(default_factories())
+CONTEXT: dict[str, PredictorFactory] = {"logistic_ctx": LogisticContextModel}
+EVENING, EARLY_MORNING = "2030-03-14 22:30", "2030-03-15 05:30"
+
+
+def filed(when: str, number: int = 900) -> ResultsPublication:
+    """A made-up results filing accepted at this New York time."""
+    return ResultsPublication(
+        at(when).astimezone(UTC), f"0000000000-30-{number:06d}", ("2.02", "9.01")
+    )
+
+
+def full_run(
+    log: Path,
+    now: str,
+    *,
+    prices: pd.DataFrame | None = None,
+    downloader: Callable[[str], pd.DataFrame] | None = None,
+    get: Callable[[str], str] | None = None,
+    context_factories: dict[str, PredictorFactory] | None = None,
+) -> NightlyResult:
+    """A run with the real six predictors and one context model."""
+    chosen = history() if prices is None else prices
+    return run_nightly(
+        now=at(now),
+        log_path=log,
+        downloader=downloader or yahoo_downloader(chosen),
+        get=get or sec_getter(),
+        context_factories=CONTEXT if context_factories is None else context_factories,
+        min_rows=100,
+    )
+
+
+def index_download_fails(prices: pd.DataFrame) -> dict[str, Any]:
+    return {"downloader": yahoo_downloader(prices, failing=["^SOX"])}
+
+
+def sec_download_fails(_prices: pd.DataFrame) -> dict[str, Any]:
+    return {"get": sec_getter(failing=True)}
+
+
+def indices_lack_the_latest_session(prices: pd.DataFrame) -> dict[str, Any]:
+    return {"downloader": yahoo_downloader(prices, context_for(prices).iloc[:-1])}
+
+
+class BrokenContextModel(LogisticContextModel):
+    def fit(self, features: pd.DataFrame, target_up: pd.Series) -> None:
+        raise ZeroDivisionError("a bug in a context model")
+
+
+def a_context_model_has_a_bug(_prices: pd.DataFrame) -> dict[str, Any]:
+    return {"context_factories": {"logistic_ctx": BrokenContextModel}}
+
+
+CONTEXT_FAILURES = [
+    index_download_fails,
+    sec_download_fails,
+    indices_lack_the_latest_session,
+    a_context_model_has_a_bug,
+]
+
+
+class TestContextModels:
+    """The context models need extra downloads. When those fail, only they wait."""
+
+    def test_every_predictor_calls_when_the_downloads_work(self, log: Path) -> None:
+        result = full_run(log, EVENING)
+        assert [p.model for p in result.predictions] == [*SIX, "logistic_ctx"]
+        assert result.skipped == () and result.skip_reason is None
+        assert len(read_log(log)) == 7
+
+    def test_the_context_model_is_given_all_the_columns(self, log: Path) -> None:
+        seen: list[list[str]] = []
+
+        class Recorder(LogisticContextModel):
+            def fit(self, features: pd.DataFrame, target_up: pd.Series) -> None:
+                seen.append(list(features.columns))
+                super().fit(features, target_up)
+
+        full_run(log, EVENING, context_factories={"logistic_ctx": Recorder})
+        assert seen == [list(EXTENDED_FEATURE_COLUMNS)]
+
+    @pytest.mark.parametrize("failure", CONTEXT_FAILURES)
+    def test_a_failed_context_download_leaves_the_other_six_calls_identical_to_a_normal_run(
+        self, tmp_path: Path, failure: Callable[[pd.DataFrame], dict[str, Any]]
+    ) -> None:
+        normal_log, failed_log = tmp_path / "normal.jsonl", tmp_path / "failed.jsonl"
+        normal = full_run(normal_log, EVENING)
+        failed = full_run(failed_log, EVENING, **failure(history()))
+
+        six = [p for p in normal.predictions if p.model in SIX]
+        assert len(six) == 6
+        assert list(failed.predictions) == six
+        assert failed.outcomes == normal.outcomes
+        assert failed.skipped == ("logistic_ctx",)
+        assert failed.skip_reason
+        # The file itself is the normal run's file without the context model's line.
+        normal_lines = normal_log.read_text().splitlines()
+        assert failed_log.read_text().splitlines() == normal_lines[:6]
+        assert len(normal_lines) == 7
+
+    @pytest.mark.parametrize("failure", CONTEXT_FAILURES)
+    def test_the_same_holds_the_morning_after_when_an_outcome_is_recorded_too(
+        self, tmp_path: Path, failure: Callable[[pd.DataFrame], dict[str, Any]]
+    ) -> None:
+        friday = add_session(history(), FRI, 0.02)
+        logs = tmp_path / "normal.jsonl", tmp_path / "failed.jsonl"
+        for path in logs:
+            full_run(path, EVENING)
+        normal = full_run(logs[0], "2030-03-15 22:30", prices=friday)
+        failed = full_run(logs[1], "2030-03-15 22:30", prices=friday, **failure(friday))
+        assert [o.session for o in failed.outcomes] == [FRI]
+        assert failed.outcomes == normal.outcomes
+        assert list(failed.predictions) == [p for p in normal.predictions if p.model in SIX]
+        assert failed.skipped == ("logistic_ctx",)
+
+    def test_the_reason_names_what_failed(self, log: Path) -> None:
+        cases = {
+            index_download_fails: "download of ^SOX (semis) failed",
+            sec_download_fails: "download from SEC failed",
+            indices_lack_the_latest_session: "last context session: 2030-03-13",
+            a_context_model_has_a_bug: "ZeroDivisionError: a bug in a context model",
+        }
+        for number, (failure, expected) in enumerate(cases.items()):
+            result = full_run(log.with_name(f"{number}.jsonl"), EVENING, **failure(history()))
+            assert expected in str(result.skip_reason)
+
+    def test_before_the_cut_off_only_the_context_models_wait(self, log: Path) -> None:
+        # 18:00 on the day of the session: the bar is complete, so the six may
+        # call, but information for a context call counts up to 20:00.
+        early = full_run(log, "2030-03-14 18:00")
+        assert [p.model for p in early.predictions] == SIX
+        assert early.skipped == ("logistic_ctx",)
+        assert "too early for a call based on 2030-03-14" in str(early.skip_reason)
+        later = full_run(log, "2030-03-14 20:00")
+        assert [p.model for p in later.predictions] == ["logistic_ctx"]
+
+    def test_a_later_run_before_the_open_adds_the_missing_call(self, log: Path) -> None:
+        first = full_run(log, EVENING, **sec_download_fails(history()))
+        assert first.skipped == ("logistic_ctx",)
+        second = full_run(log, EARLY_MORNING)
+        assert [p.model for p in second.predictions] == ["logistic_ctx"]
+        assert second.outcomes == () and second.skipped == ()
+        assert second.predictions[0].made_at == at(EARLY_MORNING)
+        assert second.predictions[0].based_on_session == THU
+        assert [r.model for r in read_log(log) if isinstance(r, Prediction)] == [
+            *SIX,
+            "logistic_ctx",
+        ]
+
+    def test_a_late_fill_makes_the_call_the_first_run_would_have_made(self, tmp_path: Path) -> None:
+        # Results came out after Thursday's close, before the 20:00 cut-off. More
+        # arrive overnight, after the cut-off and before the retry. The retry must
+        # make Thursday evening's call, not a better-informed one.
+        known_by_evening = [*make_publications(), filed("2030-03-14 16:25", 901)]
+        known_by_morning = [*known_by_evening, filed("2030-03-14 23:10", 902)]
+
+        on_time = full_run(tmp_path / "a.jsonl", EVENING, get=sec_getter(known_by_evening))
+        full_run(tmp_path / "b.jsonl", EVENING, **sec_download_fails(history()))
+        filled = full_run(tmp_path / "b.jsonl", EARLY_MORNING, get=sec_getter(known_by_morning))
+
+        first, late = on_time.predictions[-1], filled.predictions[0]
+        assert first.model == late.model == "logistic_ctx"
+        assert (late.predicted_up, late.probability_up) == (
+            first.predicted_up,
+            first.probability_up,
+        )
+        assert late.made_at > first.made_at
+
+    @pytest.mark.parametrize("when", ["2030-03-15 09:30", "2030-03-15 10:00", "2030-03-15 15:00"])
+    def test_a_late_fill_after_the_open_is_refused(self, log: Path, when: str) -> None:
+        full_run(log, EVENING, **index_download_fails(history()))
+        before = log.read_bytes()
+        # The downloads work now, but the session the call was for has opened.
+        with pytest.raises(NightlyError, match="too late to predict the session after 2030-03-14"):
+            full_run(log, when)
+        assert log.read_bytes() == before
+
+    def test_a_missed_day_is_never_filled_in_afterwards(self, log: Path) -> None:
+        full_run(log, EVENING, **index_download_fails(history()))
+        friday = add_session(history(), FRI, 0.02)
+        monday = add_session(friday, MON, -0.01)
+        full_run(log, "2030-03-15 22:30", prices=friday)
+        full_run(log, "2030-03-18 22:30", prices=monday)
+
+        calls = [r for r in read_log(log) if isinstance(r, Prediction)]
+        based_on = {
+            name: [c.based_on_session for c in calls if c.model == name]
+            for name in ("logistic", "logistic_ctx")
+        }
+        assert based_on == {"logistic": [THU, FRI, MON], "logistic_ctx": [FRI, MON]}
+        # Two sessions have been scored since. The context model has a call for
+        # only one of them: Friday's session was never called and stays that way.
+        scored = scored_predictions(read_log(log))
+        scored = scored[scored["correct"].notna()]
+        counts = scored.groupby("model").size()
+        assert (counts["logistic"], counts["logistic_ctx"]) == (2, 1)
+
+    def test_the_log_itself_refuses_a_context_call_written_after_the_open(self, log: Path) -> None:
+        # Even if the job's own check were removed, the log would not take it.
+        full_run(log, EVENING, **index_download_fails(history()))
+        late = Prediction(
+            made_at=at("2030-03-15 09:45"),
+            based_on_session=THU,
+            model="logistic_ctx",
+            predicted_up=True,
+            probability_up=0.6,
+        )
+        with pytest.raises(LogError, match="after the next session could have opened"):
+            append_records(log, [late])
+
+    def test_a_retry_that_still_fails_adds_nothing_and_says_so_again(self, log: Path) -> None:
+        full_run(log, EVENING, **index_download_fails(history()))
+        before = log.read_bytes()
+        again = full_run(log, EARLY_MORNING, **index_download_fails(history()))
+        assert again.predictions == () and again.outcomes == ()
+        assert again.skipped == ("logistic_ctx",)
+        assert log.read_bytes() == before
+
+    def test_once_every_call_is_written_the_extra_downloads_are_not_made_again(
+        self, log: Path
+    ) -> None:
+        full_run(log, EVENING)
+        rerun = full_run(
+            log,
+            EARLY_MORNING,
+            downloader=yahoo_downloader(history(), failing=["^GSPC", "^NDX", "^SOX", "^VIX"]),
+            get=sec_getter(failing=True),
+        )
+        assert rerun.predictions == () and rerun.skipped == ()
+
+    def test_a_name_cannot_be_both_a_model_and_a_context_model(self, log: Path) -> None:
+        with pytest.raises(ValueError, match="both a model and a context model"):
+            full_run(log, EVENING, context_factories={"logistic": LogisticContextModel})
+
+    def run_main(self, log: Path, now: str, **overrides: Any) -> tuple[int, list[str]]:
+        lines: list[str] = []
+        arguments: dict[str, Any] = {
+            "downloader": yahoo_downloader(history()),
+            "get": sec_getter(),
+            "context_factories": CONTEXT,
+            **overrides,
+        }
+        code = main(
+            ["--log", str(log)], now=lambda: at(now), report=lines.append, min_rows=100, **arguments
+        )
+        return code, lines
+
+    def test_the_command_ends_with_its_own_exit_code_after_writing_the_six(self, log: Path) -> None:
+        code, lines = self.run_main(log, EVENING, **sec_download_fails(history()))
+        assert code == EXIT_CONTEXT_SKIPPED == 3
+        assert len(read_log(log)) == 6
+        assert sum(line.startswith("appended prediction:") for line in lines) == 6
+        assert (
+            "NO CALL from logistic_ctx for the session after 2030-03-14: download from SEC failed"
+            in lines[-3]
+        )
+        assert "only before the next session opens" in lines[-2]
+        assert lines[-1].startswith("NIGHTLY RUN INCOMPLETE")
+
+    def test_the_command_succeeds_when_a_retry_fills_the_call(self, log: Path) -> None:
+        self.run_main(log, EVENING, **sec_download_fails(history()))
+        code, lines = self.run_main(log, EARLY_MORNING)
+        assert code == 0
+        assert [line for line in lines if "prediction" in line] == [
+            line for line in lines if "logistic_ctx" in line
+        ]
+
+    def test_a_late_fill_fails_loudly_from_the_command_line(self, log: Path) -> None:
+        self.run_main(log, EVENING, **sec_download_fails(history()))
+        before = log.read_bytes()
+        code, lines = self.run_main(log, "2030-03-15 10:00")
+        assert code == 1
+        assert lines[0].startswith("NIGHTLY RUN FAILED, nothing was written: too late")
+        assert log.read_bytes() == before
+
+
 class TestDefaults:
     def test_default_predictors_are_the_baselines_and_measured_models(self) -> None:
         assert list(default_factories()) == [*BASELINE_FACTORIES, *MODEL_FACTORIES]
@@ -374,12 +663,16 @@ class TestDefaults:
         result = run_nightly(
             now=at("2030-03-15 06:00"),
             log_path=log,
-            downloader=lambda _symbol: as_yahoo(history()),
+            downloader=yahoo_downloader(history()),
+            get=sec_getter(),
             min_rows=100,
         )
-        assert [p.model for p in result.predictions] == list(default_factories())
+        names = [*default_factories(), *CONTEXT_MODEL_FACTORIES]
+        assert [p.model for p in result.predictions] == names
+        assert names[-3:] == ["logistic_ctx", "xgboost_ctx", "lstm_ctx"]
+        assert result.skipped == ()
         for prediction in result.predictions:
-            if prediction.model in MODEL_FACTORIES:
+            if prediction.model in {*MODEL_FACTORIES, *CONTEXT_MODEL_FACTORIES}:
                 assert prediction.probability_up is not None
                 assert 0 < prediction.probability_up < 1
             else:
@@ -416,3 +709,22 @@ class TestWorkflowFile:
         assert 'cron: "15 12 * * *"' in text
         assert 'git commit -m "bot: append NVDA outcomes and predictions' in text
         assert "continue-on-error" not in text
+
+    def test_a_skipped_context_call_is_committed_first_and_then_fails_the_job(self) -> None:
+        text = WORKFLOW.read_text()
+        # Only exit code 3 is let through; any other failure stops before the commit.
+        assert 'if [ "$code" -ne 0 ] && [ "$code" -ne 3 ]; then' in text
+        assert 'echo "code=$code" >> "$GITHUB_OUTPUT"' in text
+        failing_step = text.index("- name: Fail if the context models made no call")
+        assert text.index("prediction_log verify") < text.index("git push") < failing_step
+        last_step = text[failing_step:]
+        assert "if: steps.nightly.outputs.code == '3'" in last_step
+        assert "exit 1" in last_step
+        assert EXIT_CONTEXT_SKIPPED == 3
+
+    def test_sec_is_told_who_is_asking_only_through_a_secret(self) -> None:
+        text = WORKFLOW.read_text()
+        assert "SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}" in text
+        assert "@" not in text.replace("actions/checkout@", "").replace(
+            "astral-sh/setup-uv@", ""
+        ).replace("github-actions[bot]@users.noreply.github.com", "")

@@ -70,6 +70,7 @@ DESCRIPTIONS = {
     "xgboost_ctx": "The same boosted trees, also given market indices, the VIX and results dates.",
     "lstm_ctx": "The same network, also given market indices, the VIX and results dates.",
 }
+CONTEXT_SUFFIX = "_ctx"
 BASELINE_NAMES = frozenset(b.name for b in default_baselines())
 
 # Site palette (see site/theme.scss). The theme's emerald green and its red mean
@@ -492,15 +493,25 @@ def cumulative_figure(series: Mapping[str, tuple[list[date], list[int]]]) -> go.
                 },
             )
         )
-    for position, name in enumerate(models):
+    # A context model is drawn in its twin's colour with a dashed line, so the
+    # pair reads as a pair and no line is told apart by colour alone.
+    own_colour = [n for n in models if _twin(n) not in models]
+    for name in models:
         sessions, running = series[name]
+        twin = _twin(name)
+        paired = twin is not None and twin in models
+        position = own_colour.index(twin if twin is not None and paired else name)
         figure.add_trace(
             go.Scatter(
                 x=[s.isoformat() for s in sessions],
                 y=running,
                 name=display_name(name),
                 mode="lines+markers",
-                line={"color": MODEL_COLOURS[position % len(MODEL_COLOURS)], "width": 3},
+                line={
+                    "color": MODEL_COLOURS[position % len(MODEL_COLOURS)],
+                    "width": 3,
+                    "dash": "dash" if paired else "solid",
+                },
                 marker={"size": 5},
             )
         )
@@ -508,6 +519,11 @@ def cumulative_figure(series: Mapping[str, tuple[list[date], list[int]]]) -> go.
     _style(figure, height=380)
     figure.update_yaxes(title_text="Right calls minus wrong calls")
     return figure
+
+
+def _twin(name: str) -> str | None:
+    """The technical model a context model is paired with, by its name."""
+    return name.removesuffix(CONTEXT_SUFFIX) if name.endswith(CONTEXT_SUFFIX) else None
 
 
 def accuracy_figure(report: Mapping[str, Any]) -> go.Figure:

@@ -3,9 +3,11 @@ name: Deploy site
 # Renders the Quarto site and publishes it to Cloudflare as static files.
 # Research only, not financial advice.
 #
-# Runs on every push to main, on demand, and after each successful nightly or news
-# run. The last trigger is needed because those jobs push with the workflow's own
-# token, and GitHub does not start push-triggered workflows for those commits.
+# Runs on every push to main, on demand, after each successful news run and after
+# every nightly run. The last two are needed because those jobs push with the
+# workflow's own token, and GitHub does not start push-triggered workflows for
+# those commits. A nightly run can end as a failure after committing calls (when
+# only the context models were skipped), so its result is not a condition.
 #
 # Nothing is published unless the site renders, the tests pass against the built
 # pages and the prediction log verifies.
@@ -27,7 +29,10 @@ concurrency:
 
 jobs:
   deploy:
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    if: >-
+      github.event_name != 'workflow_run'
+      || github.event.workflow_run.conclusion == 'success'
+      || github.event.workflow_run.name == 'Nightly NVDA prediction'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

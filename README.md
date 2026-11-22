@@ -29,6 +29,8 @@ down the next day?
   buy-and-hold.
 - Then logistic regression, XGBoost on technical features, and an LSTM, each added
   only after the previous one has been measured.
+- Then the same three again with market indices, the VIX and the dates of NVIDIA's
+  results added to their inputs, each compared with its twin.
 - Walk-forward validation only, tests designed to fail on look-ahead leakage, and
   transaction costs included.
 - A nightly job scores yesterday's prediction, makes tomorrow's, and appends both to

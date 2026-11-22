@@ -7,14 +7,26 @@ Each run:
    record.
 3. For the latest completed session, fits every baseline and model on the sessions
    whose outcome is already known and appends each one's call on the next session.
+4. Does the same for the context models, which also need the index closes and the
+   times NVIDIA published results.
 
-The run changes nothing unless everything succeeds. It refuses, loudly, to write a
-prediction when:
+The run refuses, loudly, to write any prediction when:
 
 - Yahoo has a newer session that it has not finished publishing. Predicting from
   the session before would be a call on a session that has already happened.
 - The window for the latest session has passed (the next weekday's open). A late
   prediction is not written; that day is simply missing from the log.
+
+In those cases, and when the prices or the log are bad, nothing is written.
+
+The context models are the one exception to all-or-nothing. If their extra
+downloads fail, or it is not yet 20:00 New York on the day of the session, the
+baselines and the technical models are written exactly as they would have been,
+the context models make no call, and the run still ends as a failure so that it
+is noticed (exit code 3). A later run can add the missing context calls only while
+the window is still open, and it uses the same fixed 20:00 cut-off, so the call
+is the one the earlier run would have made. Once the market has opened, the day is
+missed for them and is never filled in.
 
 Running it again the same morning adds nothing. Prices are held in memory only;
 the log it writes contains directions, never prices.
@@ -36,10 +48,12 @@ import pandas as pd
 
 from markets_lab.analysis.nvda.backtest import (
     BASELINE_FACTORIES,
+    CONTEXT_MODEL_FACTORIES,
     MODEL_FACTORIES,
     PredictorFactory,
 )
-from markets_lab.analysis.nvda.features import build_dataset, compute_outcomes
+from markets_lab.analysis.nvda.context_features import CallTooEarlyError, build_context_dataset
+from markets_lab.analysis.nvda.features import Dataset, build_dataset, compute_outcomes
 from markets_lab.analysis.nvda.prediction_log import (
     DEFAULT_LOG_PATH,
     LogError,
@@ -51,6 +65,9 @@ from markets_lab.analysis.nvda.prediction_log import (
     read_log,
 )
 from markets_lab.analysis.nvda.predictors import PREDICTED_UP, PROBABILITY_UP
+from markets_lab.collectors import market_context, nvda_earnings
+from markets_lab.collectors.nvda_earnings import Getter
+from markets_lab.collectors.nvda_news import sec_get
 from markets_lab.collectors.nvda_prices import (
     MIN_ROWS,
     Downloader,
@@ -60,9 +77,20 @@ from markets_lab.collectors.nvda_prices import (
     fetch_daily,
 )
 
+EXIT_FAILED = 1
+EXIT_CONTEXT_SKIPPED = 3
+"""The log was written, but the context models made no call in this run."""
+
+ContextLoader = Callable[[], Dataset]
+
 
 class NightlyError(RuntimeError):
     """The run cannot honestly write a prediction, so it writes nothing."""
+
+
+_EXPECTED = (NightlyError, PriceDataError, nvda_earnings.EarningsDataError, CallTooEarlyError)
+"""Reasons a context call can be skipped that explain themselves. Anything else is
+reported with its type, since it points at a bug rather than at missing data."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,10 +100,13 @@ class NightlyResult:
     last_session: date
     outcomes: tuple[Outcome, ...]
     predictions: tuple[Prediction, ...]
+    skipped: tuple[str, ...] = ()
+    """Context models that owed a call and did not make one in this run."""
+    skip_reason: str | None = None
 
 
 def default_factories() -> dict[str, PredictorFactory]:
-    """Every baseline and every measured model, in report order."""
+    """Every baseline and every measured model on the technical columns, in report order."""
     return {**BASELINE_FACTORIES, **MODEL_FACTORIES}
 
 
@@ -86,11 +117,22 @@ def plan_records(
     *,
     now: datetime,
     factories: Mapping[str, PredictorFactory],
+    context_factories: Mapping[str, PredictorFactory] | None = None,
+    load_context: ContextLoader | None = None,
 ) -> NightlyResult:
     """Work out which outcomes and predictions this run should append.
 
     `prices` holds completed sessions only. Nothing is written here.
+
+    `load_context` returns the dataset with the context and results columns for
+    these prices, as of `now`. It is called only if a context model owes a call.
+    Whatever goes wrong in it, or in a context model, costs only the context
+    models' calls: the others are worked out first and do not depend on it.
     """
+    context_factories = context_factories or {}
+    overlap = set(factories) & set(context_factories)
+    if overlap:
+        raise ValueError(f"names used for both a model and a context model: {sorted(overlap)}")
     dataset = build_dataset(prices)
     last_session, _ = dataset.latest()
 
@@ -105,8 +147,13 @@ def plan_records(
 
     already = {(r.model, r.based_on_session) for r in existing if isinstance(r, Prediction)}
     missing = [name for name in factories if (name, last_session) not in already]
+    context_missing = [name for name in context_factories if (name, last_session) not in already]
     predictions: list[Prediction] = []
-    if missing:
+    skipped: tuple[str, ...] = ()
+    skip_reason: str | None = None
+    if missing or context_missing:
+        # One deadline for every call, context or not: nothing is filled in once
+        # the next session could have opened.
         _, deadline = prediction_window(last_session)
         if now >= deadline:
             raise NightlyError(
@@ -114,23 +161,51 @@ def plan_records(
                 f"written before {deadline.strftime('%Y-%m-%d %H:%M UTC')}, and it is now "
                 f"{now.astimezone(UTC).strftime('%Y-%m-%d %H:%M UTC')}"
             )
-        known = dataset.labelled()
-        row = dataset.features.iloc[[-1]]
-        for name in missing:
-            predictor = factories[name]()
-            predictor.fit(known.features, known.target_up)
-            call = predictor.predict(row).iloc[0]
-            probability = float(call[PROBABILITY_UP])
-            predictions.append(
-                Prediction(
-                    made_at=now,
-                    based_on_session=last_session,
-                    model=name,
-                    predicted_up=bool(call[PREDICTED_UP]),
-                    probability_up=None if pd.isna(probability) else probability,
-                )
+    if missing:
+        predictions += _calls(missing, factories, dataset, last_session, now)
+    if context_missing:
+        try:
+            if load_context is None:
+                raise NightlyError("no source for the market context and results dates")
+            extended = load_context()
+            if not extended.features.index.equals(dataset.features.index):
+                raise NightlyError("the context dataset is not on the same sessions as the prices")
+            context_calls = _calls(context_missing, context_factories, extended, last_session, now)
+        except Exception as exc:
+            skipped = tuple(context_missing)
+            skip_reason = str(exc) if isinstance(exc, _EXPECTED) else f"{type(exc).__name__}: {exc}"
+        else:
+            predictions += context_calls
+    return NightlyResult(last_session, tuple(outcomes), tuple(predictions), skipped, skip_reason)
+
+
+def _calls(
+    names: Sequence[str],
+    factories: Mapping[str, PredictorFactory],
+    dataset: Dataset,
+    last_session: date,
+    now: datetime,
+) -> list[Prediction]:
+    """Fit each named predictor on the sessions with a known outcome and take its
+    call from the last session's row."""
+    known = dataset.labelled()
+    row = dataset.features.iloc[[-1]]
+    calls: list[Prediction] = []
+    for name in names:
+        predictor = factories[name]()
+        predictor.fit(known.features, known.target_up)
+        call = predictor.predict(row).iloc[0]
+        probability = float(call[PROBABILITY_UP])
+        calls.append(
+            Prediction(
+                made_at=now,
+                based_on_session=last_session,
+                model=name,
+                predicted_up=bool(call[PREDICTED_UP]),
+                probability_up=None if pd.isna(probability) else probability,
             )
-    return NightlyResult(last_session, tuple(outcomes), tuple(predictions))
+        )
+    return calls
 
 
 def _missing_outcomes(
@@ -170,19 +245,38 @@ def run_nightly(
     now: datetime,
     log_path: Path = DEFAULT_LOG_PATH,
     downloader: Downloader = download_raw,
+    get: Getter = sec_get,
     factories: Mapping[str, PredictorFactory] | None = None,
+    context_factories: Mapping[str, PredictorFactory] | None = None,
     dry_run: bool = False,
     min_rows: int = MIN_ROWS,
 ) -> NightlyResult:
-    """Run the job once. Either every new record is appended, or the log is untouched."""
+    """Run the job once and append what it produced in one step.
+
+    Nothing is written if the run is refused. If only the context models could
+    not make their call, everything else is written and `skipped` names them.
+    """
     fetched = fetch_daily(now=now, downloader=downloader, min_rows=min_rows)
     existing = read_log(log_path)
+
+    def load_context() -> Dataset:
+        context = market_context.fetch_context(now=now, downloader=downloader, min_rows=min_rows)
+        publications = nvda_earnings.fetch_publications(now=now, get=get)
+        # `as_of` is this run's own timestamp, the one written into each call.
+        # The dataset refuses it if the 20:00 cut-off has not passed, and uses
+        # only results published before that cut-off.
+        return build_context_dataset(fetched.prices, context.closes, publications, as_of=now)
+
     result = plan_records(
         fetched.prices,
         fetched.dropped,
         existing,
         now=now,
         factories=default_factories() if factories is None else factories,
+        context_factories=(
+            CONTEXT_MODEL_FACTORIES if context_factories is None else context_factories
+        ),
+        load_context=load_context,
     )
     if not dry_run:
         append_records(log_path, [*result.outcomes, *result.predictions])
@@ -195,7 +289,6 @@ def describe(result: NightlyResult, *, dry_run: bool) -> list[str]:
     lines = [f"last completed session: {result.last_session}"]
     if not result.outcomes and not result.predictions:
         lines.append("nothing new to record")
-        return lines
     for outcome in result.outcomes:
         direction = "up" if outcome.went_up else "not up"
         lines.append(f"{verb} outcome: {outcome.session} closed {direction}")
@@ -207,6 +300,14 @@ def describe(result: NightlyResult, *, dry_run: bool) -> list[str]:
         lines.append(
             f"{verb} prediction: {prediction.model} calls {direction}{probability} "
             f"for the session after {prediction.based_on_session}"
+        )
+    if result.skipped:
+        lines.append(
+            f"NO CALL from {', '.join(result.skipped)} for the session after "
+            f"{result.last_session}: {result.skip_reason}"
+        )
+        lines.append(
+            "a later run can still add these calls, but only before the next session opens"
         )
     return lines
 
@@ -220,7 +321,9 @@ def main(
     *,
     now: Callable[[], datetime] = lambda: datetime.now(tz=UTC),
     downloader: Downloader = download_raw,
+    get: Getter = sec_get,
     factories: Mapping[str, PredictorFactory] | None = None,
+    context_factories: Mapping[str, PredictorFactory] | None = None,
     report: Callable[[str], None] = _print,
     min_rows: int = MIN_ROWS,
 ) -> int:
@@ -238,15 +341,20 @@ def main(
             now=now(),
             log_path=args.log,
             downloader=downloader,
+            get=get,
             factories=factories,
+            context_factories=context_factories,
             dry_run=args.dry_run,
             min_rows=min_rows,
         )
     except (NightlyError, PriceDataError, LogError) as exc:
         report(f"NIGHTLY RUN FAILED, nothing was written: {exc}")
-        return 1
+        return EXIT_FAILED
     for line in describe(result, dry_run=args.dry_run):
         report(line)
+    if result.skipped:
+        report("NIGHTLY RUN INCOMPLETE: the context models made no call (see above)")
+        return EXIT_CONTEXT_SKIPPED
     return 0
 
 

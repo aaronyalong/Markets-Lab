@@ -10,6 +10,12 @@ name: Nightly NVDA prediction
 # is a retry and adds nothing. GitHub may start scheduled jobs many hours late (seen
 # 2026-11-19: both of that day's runs started about 8.5 hours late, after the open),
 # so the two evening times are early enough to absorb a delay of that size.
+#
+# The context models need two more downloads (index closes from Yahoo, filing times
+# from SEC). If those fail, the other predictors' calls are still written and
+# committed, and the job then fails at its last step so the gap is noticed. A later
+# run adds the missing calls only while the market has not opened; after that the
+# day stays missing for those models.
 
 on:
   schedule:
@@ -32,6 +38,9 @@ jobs:
     timeout-minutes: 15
     env:
       LOG: predictions/nvda.jsonl
+      # Optional. SEC asks automated clients to identify themselves; set this
+      # secret to a client name with a contact. A generic name is used without it.
+      SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
     steps:
       - uses: actions/checkout@v4
 
@@ -48,8 +57,20 @@ jobs:
             : > "$RUNNER_TEMP/previous.jsonl"
           fi
 
+      # Exit code 3 means the log was written but the context models made no call.
+      # The log is still verified and committed below; the last step then fails
+      # the job. Any other failure stops here, with nothing written.
       - name: Record outcomes and append predictions
-        run: uv run python -m markets_lab.analysis.nvda.nightly --log "$LOG"
+        id: nightly
+        run: |
+          set +e
+          uv run python -m markets_lab.analysis.nvda.nightly --log "$LOG"
+          code=$?
+          set -e
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          if [ "$code" -ne 0 ] && [ "$code" -ne 3 ]; then
+            exit "$code"
+          fi
 
       # Fails the job if any earlier line was changed, removed or reordered, or if
       # any rule of the log is broken. Nothing is committed unless this passes.
@@ -78,3 +99,9 @@ jobs:
           git add -- "$LOG"
           git commit -m "bot: append NVDA outcomes and predictions ($(date -u +%Y-%m-%d))"
           git push
+
+      - name: Fail if the context models made no call
+        if: steps.nightly.outputs.code == '3'
+        run: |
+          echo "The context models made no call in this run; see the step that ran the job."
+          exit 1

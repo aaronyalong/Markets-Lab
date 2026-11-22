@@ -82,6 +82,12 @@ def text_of(fragment: str) -> str:
     return html.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", without_scripts)))
 
 
+def chart_lines(figure: Any) -> dict[str, tuple[str, str]]:
+    """Each line of a chart by its legend name: (colour, dash style)."""
+    traces = figure.to_dict()["data"]
+    return {trace["name"]: (trace["line"]["color"], trace["line"]["dash"]) for trace in traces}
+
+
 class TestTomorrow:
     def test_before_the_log_starts(self) -> None:
         assert "has not started yet" in tomorrow_fragment([])
@@ -253,6 +259,39 @@ class TestTrackRecord:
         series = cumulative_scores(scored_predictions(records))
         assert series["always_up"] == ([FRI, MON, TUE], [1, 0, 1])
         assert series["logistic"] == ([FRI, MON, TUE], [-1, 0, 1])
+
+    def test_a_context_model_is_drawn_as_a_dashed_line_in_its_twins_colour(self) -> None:
+        records = [
+            call(THU, "logistic", True, 0.6),
+            call(THU, "xgboost", True, 0.6),
+            call(THU, "lstm", True, 0.6),
+            call(THU, "logistic_ctx", True, 0.6),
+            call(THU, "xgboost_ctx", False, 0.4),
+            call(THU, "lstm_ctx", False, 0.4),
+            went(FRI, THU, True),
+        ]
+        figure = site_page.cumulative_figure(cumulative_scores(scored_predictions(records)))
+        lines = chart_lines(figure)
+        for twin, context in (
+            ("Logistic regression", "Logistic regression + context"),
+            ("XGBoost", "XGBoost + context"),
+            ("LSTM", "LSTM + context"),
+        ):
+            assert lines[twin][1] == "solid" and lines[context][1] == "dash"
+            assert lines[twin][0] == lines[context][0]
+        # Three pairs, three colours: no two pairs share one.
+        assert len({colour for colour, _ in lines.values()}) == 3
+
+    def test_a_context_model_without_its_twin_gets_a_colour_of_its_own(self) -> None:
+        records = [
+            call(THU, "logistic", True, 0.6),
+            call(THU, "xgboost_ctx", True, 0.6),
+            went(FRI, THU, True),
+        ]
+        figure = site_page.cumulative_figure(cumulative_scores(scored_predictions(records)))
+        lines = chart_lines(figure)
+        assert lines["XGBoost + context"][1] == "solid"
+        assert lines["XGBoost + context"][0] != lines["Logistic regression"][0]
 
     def test_fragment_states_the_numbers_and_the_sample_size_warning(self) -> None:
         text = text_of(track_record_fragment(log_records()))

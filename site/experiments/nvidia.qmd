@@ -144,6 +144,11 @@ Three rules that need no learning, and that any model has to beat:
   combinations of features.
 - **LSTM**: a small neural network that reads the last 20 sessions in order.
 
+Each of the three also runs as a second version, marked "+ context". It has the
+same settings and more inputs (described below), so comparing the two versions
+shows what the extra inputs added. The "+ context" versions joined the log later
+and have their own, shorter, record.
+
 Each model's settings were fixed before it was tested and were not adjusted
 afterwards to improve the result.
 
@@ -154,6 +159,14 @@ up to that day's close: returns over the last 1 to 21 sessions, how volatile the
 last week and month were, two standard momentum indicators (RSI and MACD), how far
 the price sits from its 10, 50 and 200-day averages, volume compared with its recent
 average, the day's high-to-low range, and the day of the week.
+
+The "+ context" versions get fifteen more: how the S&P 500, the Nasdaq 100 and a
+semiconductor index moved over the last 1 and 5 sessions, how NVDA did against each
+of them over the last month, the level of the VIX and how it changed, and three
+numbers about NVIDIA's financial results: whether any had been published yet, how
+many sessions ago the latest came out, and whether they came out after that day's
+close. Results count only if the SEC had accepted the filing by 8 pm New York time
+that day, whatever time the call was actually written.
 
 ### The test
 
@@ -175,8 +188,9 @@ amount traded. Cash earns nothing in the simulation.
   simply stays invested was always going to be hard to beat here.
 - **The backtest flatters.** It is where approaches get compared, so the live log
   is the stronger evidence, and it needs more than a year of calls to say much.
-- **Technical features only.** The models see price and volume history, nothing
-  about earnings, news or the wider market.
+- **Prices, indices and dates only.** The models see price and volume history, and
+  the "+ context" versions also see market indices and when results came out. None
+  of them reads the results themselves, the news or anything about the business.
 - **Simulated is not real.** No slippage, no taxes, no interest on cash.
 - **The data source is unofficial.** Daily prices come from Yahoo Finance and are
   checked before use, but they are not guaranteed.

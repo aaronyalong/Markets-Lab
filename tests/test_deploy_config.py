@@ -104,5 +104,8 @@ class TestDeployWorkflow:
             names.append(f'"{name.group(1)}"')
         assert f"workflows: [{', '.join(names)}]" in text
         assert "github.event.workflow_run.conclusion == 'success'" in text
+        # A nightly run can commit calls and still end as a failure (only the
+        # context models skipped), so the site is rebuilt after every nightly run.
+        assert "|| github.event.workflow_run.name == 'Nightly NVDA prediction'" in text
         # A run started by the nightly job must build the commit it just pushed.
         assert "ref: main" in text
