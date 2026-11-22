@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-22T03:13:11Z",
+  "generated_at": "2026-11-22T03:18:00Z",
   "symbol": "NVDA",
   "target": "next session's close-to-close return (adjusted), as a log return",
   "range_level": 0.8,
@@ -74,6 +74,22 @@
       "mean_width": 0.067416,
       "median_width": 0.060246,
       "mean_forecast_volatility": 0.028205
+    },
+    "har": {
+      "kind": "model",
+      "sessions": 5541,
+      "qlike": -6.156052,
+      "interval_score": 0.102261,
+      "coverage": 0.814113,
+      "coverage_interval": [
+        0.804187,
+        0.8244
+      ],
+      "share_below": 0.089334,
+      "share_above": 0.096553,
+      "mean_width": 0.070152,
+      "median_width": 0.066183,
+      "mean_forecast_volatility": 0.031185
     }
   },
   "comparisons": [
@@ -117,6 +133,48 @@
       "interval_score_difference_interval": [
         -0.001976,
         -0.000841
+      ]
+    },
+    {
+      "forecaster": "har",
+      "reference": "constant",
+      "qlike_difference": -0.356517,
+      "qlike_difference_interval": [
+        -0.418927,
+        -0.293986
+      ],
+      "interval_score_difference": -0.011949,
+      "interval_score_difference_interval": [
+        -0.013823,
+        -0.010112
+      ]
+    },
+    {
+      "forecaster": "har",
+      "reference": "rolling_21",
+      "qlike_difference": -0.134649,
+      "qlike_difference_interval": [
+        -0.215776,
+        -0.067912
+      ],
+      "interval_score_difference": -0.001913,
+      "interval_score_difference_interval": [
+        -0.002948,
+        -0.000916
+      ]
+    },
+    {
+      "forecaster": "har",
+      "reference": "ewma_94",
+      "qlike_difference": -0.066932,
+      "qlike_difference_interval": [
+        -0.13283,
+        -0.015026
+      ],
+      "interval_score_difference": -0.000534,
+      "interval_score_difference_interval": [
+        -0.001309,
+        0.000289
       ]
     }
   ],

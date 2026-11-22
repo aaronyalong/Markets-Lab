@@ -46,6 +46,7 @@ from markets_lab.analysis.nvda.volatility.forecasters import (
     forecast_frame,
 )
 from markets_lab.analysis.nvda.volatility.metrics import inside, interval_scores, qlike_losses
+from markets_lab.analysis.nvda.volatility.models import HAR_INPUTS, HarVolatility
 from markets_lab.collectors.nvda_prices import save_csv
 from price_frames import at, make_prices
 
@@ -212,8 +213,15 @@ class TestEveryForecaster:
         rng = np.random.default_rng(5)
         corrupted = prices.copy()
         later = corrupted.index[cut + 1 :]
-        for column in PRICE_COLUMNS:
-            corrupted.loc[later, column] = rng.uniform(1_000, 9_000, len(later))
+        # Nonsense levels, but each bar still has its high above its low, so a
+        # forecaster that reads the day's range is given something it accepts.
+        close = rng.uniform(1_000, 9_000, len(later))
+        open_ = close * rng.uniform(0.9, 1.1, len(later))
+        corrupted.loc[later, "close"] = close
+        corrupted.loc[later, "adj_close"] = close
+        corrupted.loc[later, "open"] = open_
+        corrupted.loc[later, "high"] = np.maximum(open_, close) * 1.05
+        corrupted.loc[later, "low"] = np.minimum(open_, close) * 0.95
         clean = walk_forward_ranges(
             build_volatility_dataset(prices).labelled(), ALL_FACTORIES[name], CONFIG
         )
@@ -322,6 +330,73 @@ class TestBaselines:
         assert second.predict(features)[VOLATILITY].iloc[0] == pytest.approx(0.05)
 
 
+class TestHar:
+    """The regression on volatility at three speeds."""
+
+    def test_registered_models(self) -> None:
+        assert list(MODEL_FACTORIES) == ["har"]
+        assert HAR_INPUTS == ("range_pct", "vol_5", "vol_21")
+
+    def test_it_reads_only_its_three_inputs(self, labelled: VolatilityDataset) -> None:
+        rows = labelled.features.iloc[TRAIN_ROWS:]
+        forecaster = fitted("har", labelled)
+        changed = rows.copy()
+        others = [name for name in rows.columns if name not in HAR_INPUTS]
+        changed[others] = changed[others] * 3.0 + 1.0
+        pd.testing.assert_frame_equal(forecaster.predict(changed), forecaster.predict(rows))
+        for name in HAR_INPUTS:
+            moved = rows.copy()
+            moved[name] = moved[name] * 2.0
+            assert not forecaster.predict(moved)[VOLATILITY].equals(
+                forecaster.predict(rows)[VOLATILITY]
+            )
+
+    def test_it_recovers_a_known_relationship(self) -> None:
+        # Made-up data where the next variance really is exp(-7) * range ** 1.2 *
+        # vol_5 ** 0.5, with vol_21 playing no part.
+        rng = np.random.default_rng(11)
+        n = 40_000
+        features = pd.DataFrame(
+            {
+                "range_pct": np.exp(rng.normal(-3.5, 0.4, n)),
+                "vol_5": np.exp(rng.normal(-3.8, 0.4, n)),
+                "vol_21": np.exp(rng.normal(-3.8, 0.4, n)),
+            }
+        )
+        variance = np.exp(-7.0) * features["range_pct"] ** 1.2 * features["vol_5"] ** 0.5
+        outcome = pd.Series(rng.normal(0.0, 1.0, n) * np.sqrt(variance))
+        model = HarVolatility()
+        model.fit(features, outcome)
+        weights = model.coefficients()
+        assert weights["constant"] == pytest.approx(-7.0, abs=0.3)
+        assert weights["range_pct"] == pytest.approx(1.2, abs=0.08)
+        assert weights["vol_5"] == pytest.approx(0.5, abs=0.08)
+        assert weights["vol_21"] == pytest.approx(0.0, abs=0.08)
+        forecast = model.predict(features)[VOLATILITY].to_numpy()
+        assert np.corrcoef(np.log(forecast), np.log(np.sqrt(variance)))[0, 1] > 0.99
+
+    def test_a_flat_session_in_the_training_data_is_accepted(
+        self, labelled: VolatilityDataset
+    ) -> None:
+        outcome = labelled.next_log_return.copy()
+        outcome.iloc[[5, 50, 300]] = 0.0
+        model = HarVolatility()
+        model.fit(labelled.features, outcome)
+        assert np.isfinite(model.predict(labelled.features)[VOLATILITY]).all()
+
+    def test_an_input_that_is_not_positive_is_refused(self, labelled: VolatilityDataset) -> None:
+        broken = labelled.features.copy()
+        broken.loc[broken.index[10], "range_pct"] = 0.0
+        with pytest.raises(ValueError, match="finite and positive"):
+            HarVolatility().fit(broken, labelled.next_log_return)
+        with pytest.raises(ValueError, match="finite and positive"):
+            fitted("har", labelled).predict(broken)
+
+    def test_coefficients_need_a_fit(self) -> None:
+        with pytest.raises(RuntimeError, match="fit must be called"):
+            HarVolatility().coefficients()
+
+
 class TestScores:
     def test_qlike_by_hand(self) -> None:
         losses = qlike_losses(np.array([0.02, 0.01]), np.array([0.02, -0.03]))
@@ -409,9 +484,10 @@ class TestReportContents:
 
     def test_every_forecaster_is_scored_on_the_same_sessions(self, report: dict[str, Any]) -> None:
         rows = report["forecasters"]
-        assert list(rows) == ["constant", "rolling_21", "ewma_94"]
+        assert list(rows) == [*BASELINE_FACTORIES, *MODEL_FACTORIES]
         assert {row["sessions"] for row in rows.values()} == {report["data"]["tested_sessions"]}
-        assert {row["kind"] for row in rows.values()} == {"baseline"}
+        kinds = [row["kind"] for row in rows.values()]
+        assert kinds == ["baseline"] * len(BASELINE_FACTORIES) + ["model"] * len(MODEL_FACTORIES)
 
     def test_coverage_and_the_two_kinds_of_miss_add_up(self, report: dict[str, Any]) -> None:
         for row in report["forecasters"].values():
@@ -432,7 +508,11 @@ class TestReportContents:
         self, report: dict[str, Any]
     ) -> None:
         pairs = [(row["forecaster"], row["reference"]) for row in report["comparisons"]]
+        names = [*BASELINE_FACTORIES, *MODEL_FACTORIES]
         assert pairs == [
+            (name, earlier) for position, name in enumerate(names) for earlier in names[:position]
+        ]
+        assert pairs[:3] == [
             ("rolling_21", "constant"),
             ("ewma_94", "constant"),
             ("ewma_94", "rolling_21"),
@@ -468,6 +548,7 @@ class TestReportContents:
                 return super()._volatility(features) * 1.5
 
         result = run_backtest(dataset, models={"wider": Wider}, config=CONFIG, bootstrap=QUICK)
+        assert list(result["forecasters"])[:3] == ["constant", "rolling_21", "ewma_94"]
         assert list(result["forecasters"])[-1] == "wider"
         assert result["forecasters"]["wider"]["kind"] == "model"
         references = [r["reference"] for r in result["comparisons"] if r["forecaster"] == "wider"]
@@ -539,7 +620,7 @@ class TestCommandLine:
         )
         assert code == 0
         written = json.loads(out.read_text())
-        assert list(written["forecasters"]) == ["constant", "rolling_21", "ewma_94"]
+        assert list(written["forecasters"]) == ["constant", "rolling_21", "ewma_94", "har"]
         assert written["validation"]["initial_train_sessions"] == 1_260
         assert written["intervals"]["resamples"] == 50
         assert lines[-1] == f"\nwrote {out}"
