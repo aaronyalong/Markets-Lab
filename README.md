@@ -34,8 +34,12 @@ down the next day?
 - Walk-forward validation only, tests designed to fail on look-ahead leakage, and
   transaction costs included.
 - A nightly job scores yesterday's prediction, makes tomorrow's, and appends both to
-  a prediction log that is never edited afterwards. The log records direction only:
+  a prediction log that is never edited afterwards. For direction the log records
   date, model, predicted direction, probability, and whether it was right.
+- A second question, how big the next move will be: simple volatility forecasters
+  and two models each give a range meant to hold the next day's return 80% of the
+  time. The log records each range and, afterwards, only whether the return fell
+  inside it, below it or above it.
 - "No model beats buy-and-hold" is a valid outcome and will be reported as such.
 
 ### NVIDIA headlines
@@ -65,7 +69,8 @@ against the filing's XBRL data.
   gitignored. The site shows aggregates and the prediction log only.
 - No prices or daily returns are published. Simulated returns appear only as
   summary figures (for example total and annualised return against buy-and-hold,
-  with intervals).
+  with intervals). The one exception is a forecaster's own range for the next day,
+  which is a forecast, not data.
 - Test fixtures are synthetic. No real market data is stored in this repository.
 
 ## Repository layout

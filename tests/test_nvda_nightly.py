@@ -26,6 +26,7 @@ from markets_lab.analysis.nvda.nightly import (
     NightlyError,
     NightlyResult,
     default_factories,
+    default_range_factories,
     main,
     run_nightly,
 )
@@ -33,12 +34,16 @@ from markets_lab.analysis.nvda.prediction_log import (
     LogError,
     Outcome,
     Prediction,
+    RangeForecast,
+    RangeOutcome,
     append_records,
     parse_log,
     read_log,
     scored_predictions,
+    scored_ranges,
 )
 from markets_lab.analysis.nvda.predictors import prediction_frame
+from markets_lab.analysis.nvda.volatility.dataset import build_volatility_dataset
 from markets_lab.collectors.nvda_earnings import ResultsPublication
 from nvda_test_predictors import LeastSquaresLearner
 from price_frames import as_yahoo, at, make_prices, with_extra_row
@@ -79,6 +84,7 @@ def nightly(
         downloader=lambda _symbol: as_yahoo(prices),
         factories=FACTORIES if factories is None else factories,
         context_factories={},
+        range_factories={},
         dry_run=dry_run,
         min_rows=100,
     )
@@ -306,6 +312,7 @@ class TestDryRunAndCommandLine:
             downloader=downloader or (lambda _symbol: as_yahoo(prices)),
             factories=FACTORIES,
             context_factories={},
+            range_factories={},
             report=lines.append,
             min_rows=100,
         )
@@ -406,6 +413,7 @@ def full_run(
         downloader=downloader or yahoo_downloader(chosen),
         get=get or sec_getter(),
         context_factories=CONTEXT if context_factories is None else context_factories,
+        range_factories={},
         min_rows=100,
     )
 
@@ -618,6 +626,7 @@ class TestContextModels:
             "downloader": yahoo_downloader(history()),
             "get": sec_getter(),
             "context_factories": CONTEXT,
+            "range_factories": {},
             **overrides,
         }
         code = main(
@@ -654,6 +663,192 @@ class TestContextModels:
         assert log.read_bytes() == before
 
 
+RANGES = ["constant", "rolling_21", "ewma_94", "har", "xgboost_vol"]
+
+
+def range_run(
+    log: Path,
+    prices: pd.DataFrame,
+    now: str,
+    *,
+    range_factories: dict[str, Any] | None = None,
+    dry_run: bool = False,
+) -> NightlyResult:
+    """A run with the usual test predictors and the real volatility forecasters."""
+    return run_nightly(
+        now=at(now),
+        log_path=log,
+        downloader=lambda _symbol: as_yahoo(prices),
+        factories=FACTORIES,
+        context_factories={},
+        range_factories=range_factories,
+        dry_run=dry_run,
+        min_rows=100,
+    )
+
+
+class TestRanges:
+    """The size of the move: a range per forecaster, then where the return fell."""
+
+    def test_the_first_run_writes_one_range_per_forecaster(self, log: Path) -> None:
+        result = range_run(log, history(), "2030-03-14 22:30")
+        assert [f.model for f in result.range_forecasts] == RANGES
+        assert result.range_outcomes == ()
+        for forecast in result.range_forecasts:
+            assert forecast.based_on_session == THU
+            assert forecast.level == 0.8
+            assert -0.5 < forecast.lower_return < 0 < forecast.upper_return < 0.5
+            assert forecast.made_at == at("2030-03-14 22:30")
+
+    def test_the_range_is_the_forecasters_own_output_as_simple_returns(self, log: Path) -> None:
+        result = range_run(log, history(), "2030-03-14 22:30")
+        dataset = build_volatility_dataset(history())
+        known = dataset.labelled()
+        forecaster = default_range_factories()["ewma_94"]()
+        forecaster.fit(known.features, known.next_log_return)
+        expected = forecaster.predict(dataset.features.iloc[[-1]]).iloc[0]
+        logged = next(f for f in result.range_forecasts if f.model == "ewma_94")
+        assert logged.lower_return == round(float(np.expm1(expected["lower"])), 4)
+        assert logged.upper_return == round(float(np.expm1(expected["upper"])), 4)
+
+    @pytest.mark.parametrize(
+        ("change", "position"), [(0.30, "above"), (-0.30, "below"), (0.001, "inside")]
+    )
+    def test_the_next_run_records_where_the_return_fell(
+        self, log: Path, change: float, position: str
+    ) -> None:
+        range_run(log, history(), "2030-03-14 22:30")
+        result = range_run(log, add_session(history(), FRI, change), "2030-03-15 22:30")
+        assert [(o.model, o.position) for o in result.range_outcomes] == [
+            (name, position) for name in RANGES
+        ]
+        assert {(o.session, o.previous_session) for o in result.range_outcomes} == {(FRI, THU)}
+        assert [f.based_on_session for f in result.range_forecasts] == [FRI] * len(RANGES)
+
+    def test_the_position_is_judged_against_the_bounds_as_logged(self, log: Path) -> None:
+        first = range_run(log, history(), "2030-03-14 22:30")
+        bounds = {f.model: (f.lower_return, f.upper_return) for f in first.range_forecasts}
+        # A rise that is above the narrowest logged upper bound and below the widest.
+        uppers = sorted(upper for _, upper in bounds.values())
+        change = (uppers[0] + uppers[-1]) / 2
+        assert uppers[0] < change < uppers[-1]
+        result = range_run(log, add_session(history(), FRI, change), "2030-03-15 22:30")
+        for scored in result.range_outcomes:
+            upper = bounds[scored.model][1]
+            assert scored.position == ("above" if change > upper else "inside")
+        assert {o.position for o in result.range_outcomes} == {"above", "inside"}
+
+    def test_records_are_written_in_the_order_the_log_needs(self, log: Path) -> None:
+        range_run(log, history(), "2030-03-14 22:30")
+        range_run(log, add_session(history(), FRI, 0.01), "2030-03-15 22:30")
+        kinds = [type(record).__name__ for record in read_log(log)]
+        friday = kinds[len(MODELS) + len(RANGES) :]
+        assert friday == (
+            ["Outcome"]
+            + ["RangeOutcome"] * len(RANGES)
+            + ["Prediction"] * len(MODELS)
+            + ["RangeForecast"] * len(RANGES)
+        )
+
+    def test_running_again_adds_nothing(self, log: Path) -> None:
+        range_run(log, history(), "2030-03-14 22:30")
+        friday = add_session(history(), FRI, 0.01)
+        range_run(log, friday, "2030-03-15 22:30")
+        before = log.read_bytes()
+        again = range_run(log, friday, "2030-03-16 06:00")
+        assert again.records == []
+        assert log.read_bytes() == before
+
+    def test_a_range_is_not_written_after_the_next_session_could_have_opened(
+        self, log: Path
+    ) -> None:
+        with pytest.raises(NightlyError, match="too late to predict the session after 2030-03-14"):
+            range_run(log, history(), "2030-03-15 09:30")
+        assert not log.exists()
+
+    def test_a_missed_range_is_never_filled_in_afterwards(self, log: Path) -> None:
+        # The direction calls were made on Thursday evening, the ranges were not.
+        nightly(log, history(), "2030-03-14 22:30")
+        before = log.read_bytes()
+        with pytest.raises(NightlyError, match="too late to predict"):
+            range_run(log, history(), "2030-03-15 10:00")
+        assert log.read_bytes() == before
+        range_run(log, add_session(history(), FRI, 0.01), "2030-03-15 22:30")
+        ranges = scored_ranges(read_log(log))
+        assert set(ranges["based_on_session"]) == {FRI}
+        assert not any(isinstance(r, RangeOutcome) for r in read_log(log))
+
+    def test_a_new_forecaster_joins_on_its_own_start_date(self, log: Path) -> None:
+        factories = default_range_factories()
+        without_har = {name: factory for name, factory in factories.items() if name != "har"}
+        range_run(log, history(), "2030-03-14 22:30", range_factories=without_har)
+        result = range_run(log, add_session(history(), FRI, 0.01), "2030-03-15 22:30")
+        assert "har" not in {o.model for o in result.range_outcomes}
+        assert "har" in {f.model for f in result.range_forecasts}
+
+    def test_ranges_are_written_even_when_the_context_models_are_skipped(self, log: Path) -> None:
+        result = run_nightly(
+            now=at(EVENING),
+            log_path=log,
+            downloader=yahoo_downloader(history(), failing=["^VIX"]),
+            get=sec_getter(),
+            factories=FACTORIES,
+            context_factories=CONTEXT,
+            min_rows=100,
+        )
+        assert result.skipped == ("logistic_ctx",)
+        assert [f.model for f in result.range_forecasts] == RANGES
+        assert sum(isinstance(r, RangeForecast) for r in read_log(log)) == len(RANGES)
+
+    def test_a_partial_bar_for_today_never_reaches_a_range(self, tmp_path: Path) -> None:
+        prices = history()
+        partial = with_extra_row(prices, str(FRI), close=1.0, adj_close=1.0, low=0.5)
+        clean_log, dirty_log = tmp_path / "clean.jsonl", tmp_path / "dirty.jsonl"
+        range_run(clean_log, prices, "2030-03-15 06:00")
+        range_run(dirty_log, partial, "2030-03-15 06:00")
+        assert dirty_log.read_text() == clean_log.read_text()
+
+    def test_the_log_stays_valid_and_holds_no_return(self, log: Path) -> None:
+        range_run(log, history(), "2030-03-14 22:30")
+        change = 0.012345
+        range_run(log, add_session(history(), FRI, change), "2030-03-15 22:30")
+        text = log.read_text()
+        assert parse_log(text) == read_log(log)
+        assert "0.012345" not in text and "0.0123" not in text
+        for line in text.splitlines():
+            if '"type":"range_outcome"' in line:
+                assert "return" not in line
+
+    def test_dry_run_writes_nothing_and_the_command_reports_ranges(self, log: Path) -> None:
+        result = range_run(log, history(), "2030-03-14 22:30", dry_run=True)
+        assert len(result.range_forecasts) == len(RANGES) and not log.exists()
+        lines: list[str] = []
+        code = main(
+            ["--log", str(log)],
+            now=lambda: at("2030-03-14 22:30"),
+            downloader=lambda _symbol: as_yahoo(history()),
+            factories=FACTORIES,
+            context_factories={},
+            report=lines.append,
+            min_rows=100,
+        )
+        assert code == 0
+        ranges = [line for line in lines if line.startswith("appended range: ")]
+        assert len(ranges) == len(RANGES)
+        assert ranges[2].startswith("appended range: ewma_94 expects -")
+        assert "(80% range) for the session after 2030-03-14" in ranges[2]
+        main(
+            ["--log", str(log)],
+            now=lambda: at("2030-03-15 22:30"),
+            downloader=lambda _symbol: as_yahoo(add_session(history(), FRI, 0.30)),
+            factories=FACTORIES,
+            context_factories={},
+            report=lines.append,
+            min_rows=100,
+        )
+        assert "appended range outcome: 2030-03-15 closed above ewma_94's range" in lines
+
+
 class TestDefaults:
     def test_default_predictors_are_the_baselines_and_measured_models(self) -> None:
         assert list(default_factories()) == [*BASELINE_FACTORIES, *MODEL_FACTORIES]
@@ -671,6 +866,14 @@ class TestDefaults:
         assert [p.model for p in result.predictions] == names
         assert names[-3:] == ["logistic_ctx", "xgboost_ctx", "lstm_ctx"]
         assert result.skipped == ()
+        assert [f.model for f in result.range_forecasts] == [
+            "constant",
+            "rolling_21",
+            "ewma_94",
+            "har",
+            "xgboost_vol",
+        ]
+        assert list(default_range_factories()) == [f.model for f in result.range_forecasts]
         for prediction in result.predictions:
             if prediction.model in {*MODEL_FACTORIES, *CONTEXT_MODEL_FACTORIES}:
                 assert prediction.probability_up is not None

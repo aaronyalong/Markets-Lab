@@ -19,6 +19,8 @@ from markets_lab.analysis.nvda.metrics import BootstrapConfig, wilson_interval
 from markets_lab.analysis.nvda.prediction_log import (
     Outcome,
     Prediction,
+    RangeForecast,
+    RangeOutcome,
     Record,
     append_records,
     scored_predictions,
@@ -409,6 +411,21 @@ class TestBacktestFragment:
 
 
 class TestWhatIsPublished:
+    def test_range_records_in_the_log_do_not_disturb_the_direction_fragments(
+        self, report: dict[str, Any]
+    ) -> None:
+        # The nightly job writes range forecasts and their outcomes into the same
+        # log. Until the page shows them, they must change nothing here.
+        with_ranges = [
+            *log_records()[:2],
+            RangeForecast(at(f"{THU} 18:00"), THU, "ewma_94", 0.8, -0.03, 0.04),
+            log_records()[2],
+            RangeOutcome(at(f"{FRI} 17:30"), FRI, THU, "ewma_94", "inside"),
+            *log_records()[3:],
+            RangeForecast(at(f"{MON} 18:00"), MON, "ewma_94", 0.8, -0.03, 0.04),
+        ]
+        assert build_fragments(report, with_ranges) == build_fragments(report, log_records())
+
     def test_fragments_are_raw_html_blocks(self, report: dict[str, Any]) -> None:
         fragments = build_fragments(report, log_records())
         assert set(fragments) == {

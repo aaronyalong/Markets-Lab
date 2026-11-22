@@ -6,6 +6,7 @@ import itertools
 import json
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -14,14 +15,18 @@ from markets_lab.analysis.nvda.prediction_log import (
     LogError,
     Outcome,
     Prediction,
+    RangeForecast,
+    RangeOutcome,
     Record,
     append_records,
     check_append_only,
     main,
     parse_log,
     prediction_window,
+    range_position,
     read_log,
     scored_predictions,
+    scored_ranges,
 )
 from price_frames import at
 
@@ -391,7 +396,10 @@ class TestCommandLine:
     def test_valid_log(self, log: Path) -> None:
         code, output = self.run("verify", "--log", str(log))
         assert code == 0
-        assert output == "log is valid: 8 records (6 predictions, 2 outcomes)"
+        assert output == (
+            "log is valid: 8 records (6 predictions, 2 outcomes, 0 range forecasts, "
+            "0 range outcomes)"
+        )
 
     def test_valid_extension_of_a_previous_copy(self, log: Path, tmp_path: Path) -> None:
         previous = tmp_path / "previous.jsonl"
@@ -429,3 +437,284 @@ class TestCommandLine:
 def test_helper_times_are_new_york() -> None:
     assert at("2030-03-14 18:00") - at("2030-03-14 16:00") == timedelta(hours=2)
     assert at("2030-03-14 18:00").astimezone(UTC).hour == 22
+
+
+def forecast(
+    based_on: date = THU,
+    model: str = "ewma_94",
+    *,
+    lower: float = -0.031,
+    upper: float = 0.034,
+    made: str | None = None,
+) -> RangeForecast:
+    made_at = at(made) if made else at(f"{based_on} 18:00")
+    return RangeForecast(made_at, based_on, model, 0.8, lower, upper)
+
+
+def placed(
+    session: date,
+    previous: date,
+    position: str,
+    model: str = "ewma_94",
+    *,
+    recorded: str | None = None,
+) -> RangeOutcome:
+    recorded_at = at(recorded) if recorded else at(f"{session} 17:30")
+    return RangeOutcome(recorded_at, session, previous, model, position)
+
+
+def range_week() -> list[Record]:
+    """Two sessions with direction calls and ranges, in the order the job writes them."""
+    return [
+        prediction(THU, "always_up", probability=None),
+        forecast(THU, "constant", lower=-0.045, upper=0.047),
+        forecast(THU, "ewma_94"),
+        outcome(FRI, THU, up=True),
+        placed(FRI, THU, "inside", "constant"),
+        placed(FRI, THU, "above", "ewma_94"),
+        prediction(FRI, "always_up", probability=None),
+        forecast(FRI, "constant", lower=-0.045, upper=0.047),
+        forecast(FRI, "ewma_94", lower=-0.036, upper=0.039),
+    ]
+
+
+@pytest.fixture
+def range_log(tmp_path: Path) -> Path:
+    path = tmp_path / "predictions" / "ranges.jsonl"
+    append_records(path, range_week())
+    return path
+
+
+class TestRangeRecords:
+    def test_what_is_appended_is_what_is_read(self, range_log: Path) -> None:
+        assert read_log(range_log) == range_week()
+
+    def test_records_have_exactly_the_approved_fields(self, range_log: Path) -> None:
+        by_type = {json.loads(line)["type"]: set(json.loads(line)) for line in lines_of(range_log)}
+        common = {"v", "type", "prev_hash", "hash"}
+        assert by_type["range_forecast"] == common | {
+            "made_at",
+            "based_on_session",
+            "model",
+            "level",
+            "lower_return",
+            "upper_return",
+        }
+        assert by_type["range_outcome"] == common | {
+            "recorded_at",
+            "session",
+            "previous_session",
+            "model",
+            "position",
+        }
+
+    def test_what_happened_is_stored_only_as_a_position(self, range_log: Path) -> None:
+        # No field can hold the session's return: a range outcome has no number
+        # in it at all besides the record version.
+        for line in lines_of(range_log):
+            record = json.loads(line)
+            if record["type"] == "range_outcome":
+                numbers = [v for v in record.values() if isinstance(v, int | float)]
+                assert numbers == [1]
+                assert record["position"] in ("below", "inside", "above")
+
+    def test_bounds_are_kept_to_four_decimals(self) -> None:
+        record = forecast(lower=-0.031249, upper=0.034051)
+        assert (record.lower_return, record.upper_return) == (-0.0312, 0.0341)
+
+    def test_an_extra_field_is_refused(self, range_log: Path) -> None:
+        lines = lines_of(range_log)
+        record = json.loads(lines[4])
+        assert record["type"] == "range_outcome"
+        record["realised_return"] = 0.021
+        lines[4] = json.dumps(record)
+        with pytest.raises(LogError, match="unexpected fields"):
+            parse_log("\n".join(lines) + "\n")
+
+    def test_changing_a_past_range_or_position_is_detected(self, range_log: Path) -> None:
+        text = range_log.read_text()
+        for old, new in (('"upper_return":0.034', '"upper_return":0.064'), ('"above"', '"inside"')):
+            assert old in text
+            with pytest.raises(LogError, match="does not match its hash"):
+                parse_log(text.replace(old, new, 1))
+
+    @pytest.mark.parametrize(
+        ("lower", "upper", "message"),
+        [
+            (0.02, 0.02, "below upper_return"),
+            (0.03, 0.01, "below upper_return"),
+            (-1.0, 0.01, "above -1"),
+            (float("nan"), 0.01, "must be finite"),
+            (-0.01, float("inf"), "must be finite"),
+            (True, 0.01, "must be a number"),
+            ("-0.01", 0.01, "must be a number"),
+        ],
+    )
+    def test_bounds_must_be_an_ordered_pair_of_real_returns(
+        self, lower: Any, upper: Any, message: str
+    ) -> None:
+        with pytest.raises(LogError, match=message):
+            RangeForecast(at("2030-03-14 18:00"), THU, "ewma_94", 0.8, lower, upper)
+
+    @pytest.mark.parametrize("level", [0.0, 1.0, 1.5, -0.2, True, "0.8"])
+    def test_level_must_be_a_share_between_zero_and_one(self, level: Any) -> None:
+        with pytest.raises(LogError, match="level must be"):
+            RangeForecast(at("2030-03-14 18:00"), THU, "ewma_94", level, -0.03, 0.03)
+
+    def test_position_and_names_are_restricted(self) -> None:
+        with pytest.raises(LogError, match="position must be one of below, inside, above"):
+            placed(FRI, THU, "outside")
+        with pytest.raises(LogError, match="model name"):
+            forecast(model="EWMA 94")
+        with pytest.raises(LogError, match="model name"):
+            placed(FRI, THU, "inside", "EWMA 94")
+        with pytest.raises(LogError, match="previous_session must be before session"):
+            placed(THU, FRI, "inside")
+
+    def test_range_position_counts_the_bounds_as_inside(self) -> None:
+        assert range_position(-0.03, 0.04, -0.0301) == "below"
+        assert range_position(-0.03, 0.04, -0.03) == "inside"
+        assert range_position(-0.03, 0.04, 0.04) == "inside"
+        assert range_position(-0.03, 0.04, 0.0401) == "above"
+
+
+class TestRangeRules:
+    @pytest.mark.parametrize("made", ["2030-03-14 16:00", "2030-03-14 22:30", "2030-03-15 09:29"])
+    def test_a_range_written_inside_the_window_is_accepted(self, tmp_path: Path, made: str) -> None:
+        append_records(tmp_path / "log.jsonl", [forecast(made=made)])
+
+    @pytest.mark.parametrize("made", ["2030-03-15 09:30", "2030-03-15 12:00", "2030-03-18 08:00"])
+    def test_a_range_written_at_or_after_the_next_open_is_refused(
+        self, tmp_path: Path, made: str
+    ) -> None:
+        with pytest.raises(LogError, match="after the next session could have opened"):
+            append_records(tmp_path / "log.jsonl", [forecast(made=made)])
+
+    def test_a_range_written_before_its_session_closed_is_refused(self, tmp_path: Path) -> None:
+        with pytest.raises(LogError, match="had closed"):
+            append_records(tmp_path / "log.jsonl", [forecast(made="2030-03-14 15:59")])
+
+    def test_a_range_cannot_follow_the_outcome_it_forecasts(self, range_log: Path) -> None:
+        late = forecast(THU, "har", made="2030-03-15 18:10")
+        with pytest.raises(LogError, match="outcome of a later session"):
+            append_records(range_log, [late])
+
+    def test_one_range_per_forecaster_per_session(self, range_log: Path) -> None:
+        with pytest.raises(LogError, match="ewma_94 already has a range forecast based on"):
+            append_records(range_log, [forecast(FRI, "ewma_94", made="2030-03-15 19:00")])
+
+    def test_a_forecaster_and_a_direction_model_may_share_a_name_and_session(
+        self, tmp_path: Path
+    ) -> None:
+        # They are different kinds of record, counted separately.
+        append_records(
+            tmp_path / "log.jsonl", [prediction(THU, "xgboost"), forecast(THU, "xgboost")]
+        )
+
+    def test_a_new_forecaster_can_join_later(self, range_log: Path) -> None:
+        append_records(range_log, [forecast(FRI, "har", made="2030-03-15 19:00")])
+        assert len(read_log(range_log)) == len(range_week()) + 1
+
+    def test_a_range_outcome_needs_its_forecast(self, range_log: Path) -> None:
+        orphan = placed(FRI, THU, "inside", "har", recorded="2030-03-15 19:00")
+        with pytest.raises(LogError, match="har has no range forecast based on 2030-03-14"):
+            append_records(range_log, [orphan])
+
+    def test_a_range_outcome_needs_the_sessions_outcome_first(self, tmp_path: Path) -> None:
+        path = tmp_path / "log.jsonl"
+        with pytest.raises(LogError, match="has not been recorded"):
+            append_records(path, [forecast(THU), placed(FRI, THU, "inside")])
+        # Nor may it name a different session from the one the outcome was for.
+        records = [forecast(THU), outcome(FRI, THU, up=True)]
+        with pytest.raises(LogError, match="has not been recorded"):
+            append_records(
+                path, [*records, placed(MON, THU, "inside", recorded="2030-03-18 17:30")]
+            )
+
+    def test_a_range_is_scored_once(self, range_log: Path) -> None:
+        again = placed(FRI, THU, "inside", "ewma_94", recorded="2030-03-15 19:00")
+        with pytest.raises(LogError, match="already has an outcome"):
+            append_records(range_log, [again])
+
+    @pytest.mark.parametrize(
+        ("up", "lower", "upper", "position"),
+        [
+            (True, -0.03, 0.04, "below"),  # a rise cannot be below a range that starts below zero
+            (True, -0.05, -0.01, "inside"),  # nor inside a range that ends below zero
+            (True, -0.05, 0.0, "inside"),
+            (False, -0.03, 0.04, "above"),  # a fall cannot be above a range that ends above zero
+            (False, -0.03, 0.0, "above"),
+            (False, 0.01, 0.04, "inside"),  # nor inside a range that starts above zero
+        ],
+    )
+    def test_a_position_that_contradicts_the_direction_is_refused(
+        self, tmp_path: Path, up: bool, lower: float, upper: float, position: str
+    ) -> None:
+        records = [
+            forecast(THU, lower=lower, upper=upper),
+            outcome(FRI, THU, up=up),
+            placed(FRI, THU, position),
+        ]
+        with pytest.raises(LogError, match="which cannot be"):
+            append_records(tmp_path / "log.jsonl", records)
+
+    @pytest.mark.parametrize(
+        ("up", "lower", "upper", "position"),
+        [
+            (True, -0.03, 0.04, "inside"),
+            (True, -0.03, 0.04, "above"),
+            (True, 0.01, 0.04, "below"),
+            (False, -0.03, 0.04, "inside"),
+            (False, -0.03, 0.04, "below"),
+            (False, -0.05, -0.01, "above"),
+            (False, 0.0, 0.04, "inside"),  # a flat session counts as not up
+        ],
+    )
+    def test_a_position_that_agrees_with_the_direction_is_accepted(
+        self, tmp_path: Path, up: bool, lower: float, upper: float, position: str
+    ) -> None:
+        records = [
+            forecast(THU, lower=lower, upper=upper),
+            outcome(FRI, THU, up=up),
+            placed(FRI, THU, position),
+        ]
+        append_records(tmp_path / "log.jsonl", records)
+
+    def test_a_refused_range_leaves_the_file_untouched(self, range_log: Path) -> None:
+        before = range_log.read_bytes()
+        with pytest.raises(LogError):
+            append_records(range_log, [forecast(FRI, "ewma_94", made="2030-03-15 19:00")])
+        assert range_log.read_bytes() == before
+
+
+class TestRangeScoring:
+    def test_ranges_are_paired_with_where_the_outcome_fell(self, range_log: Path) -> None:
+        scored = scored_ranges(read_log(range_log))
+        first = scored[scored["based_on_session"] == THU].set_index("model")
+        assert first.loc["constant", "position"] == "inside"
+        assert first.loc["ewma_94", "position"] == "above"
+        assert first.loc["ewma_94", "target_session"] == FRI
+        assert (first.loc["ewma_94", "lower_return"], first.loc["ewma_94", "upper_return"]) == (
+            -0.031,
+            0.034,
+        )
+        assert first.loc["ewma_94", "level"] == 0.8
+
+    def test_the_latest_ranges_are_not_scored_yet(self, range_log: Path) -> None:
+        scored = scored_ranges(read_log(range_log))
+        latest = scored[scored["based_on_session"] == FRI]
+        assert len(latest) == 2
+        assert latest["position"].isna().all() and latest["target_session"].isna().all()
+
+    def test_direction_scoring_ignores_range_records(self, range_log: Path) -> None:
+        scored = scored_predictions(read_log(range_log))
+        assert list(scored["model"]) == ["always_up", "always_up"]
+        assert scored_ranges(week()).empty
+
+    def test_the_verifier_counts_each_kind(self, range_log: Path) -> None:
+        lines: list[str] = []
+        assert main(["verify", "--log", str(range_log)], report=lines.append) == 0
+        assert lines == [
+            "log is valid: 9 records (2 predictions, 1 outcomes, 4 range forecasts, "
+            "2 range outcomes)"
+        ]

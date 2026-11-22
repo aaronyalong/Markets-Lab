@@ -9,6 +9,9 @@ Each run:
    whose outcome is already known and appends each one's call on the next session.
 4. Does the same for the context models, which also need the index closes and the
    times NVIDIA published results.
+5. For the size of the move: appends each volatility forecaster's range for the
+   next session, and, for every range whose session has now finished, whether the
+   return fell inside it, below it or above it.
 
 The run refuses, loudly, to write any prediction when:
 
@@ -28,8 +31,9 @@ the window is still open, and it uses the same fixed 20:00 cut-off, so the call
 is the one the earlier run would have made. Once the market has opened, the day is
 missed for them and is never filled in.
 
-Running it again the same morning adds nothing. Prices are held in memory only;
-the log it writes contains directions, never prices.
+Running it again the same morning adds nothing. Prices are held in memory only.
+The log it writes contains directions, forecast ranges and where each return fell
+against its range, never prices or realised returns.
 
     uv run python -m markets_lab.analysis.nvda.nightly --dry-run
     uv run python -m markets_lab.analysis.nvda.nightly
@@ -38,6 +42,7 @@ the log it writes contains directions, never prices.
 from __future__ import annotations
 
 import argparse
+import math
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -59,12 +64,19 @@ from markets_lab.analysis.nvda.prediction_log import (
     LogError,
     Outcome,
     Prediction,
+    RangeForecast,
+    RangeOutcome,
     Record,
     append_records,
     prediction_window,
+    range_position,
     read_log,
 )
 from markets_lab.analysis.nvda.predictors import PREDICTED_UP, PROBABILITY_UP
+from markets_lab.analysis.nvda.volatility import backtest as volatility_backtest
+from markets_lab.analysis.nvda.volatility.backtest import ForecasterFactory
+from markets_lab.analysis.nvda.volatility.dataset import build_volatility_dataset
+from markets_lab.analysis.nvda.volatility.forecasters import LOWER, RANGE_LEVEL, UPPER
 from markets_lab.collectors import market_context, nvda_earnings
 from markets_lab.collectors.nvda_earnings import Getter
 from markets_lab.collectors.nvda_news import sec_get
@@ -103,11 +115,24 @@ class NightlyResult:
     skipped: tuple[str, ...] = ()
     """Context models that owed a call and did not make one in this run."""
     skip_reason: str | None = None
+    range_outcomes: tuple[RangeOutcome, ...] = ()
+    range_forecasts: tuple[RangeForecast, ...] = ()
+
+    @property
+    def records(self) -> list[Record]:
+        """Everything to append, in the order the log's rules need: what happened
+        first, then the calls on what happens next."""
+        return [*self.outcomes, *self.range_outcomes, *self.predictions, *self.range_forecasts]
 
 
 def default_factories() -> dict[str, PredictorFactory]:
     """Every baseline and every measured model on the technical columns, in report order."""
     return {**BASELINE_FACTORIES, **MODEL_FACTORIES}
+
+
+def default_range_factories() -> dict[str, ForecasterFactory]:
+    """Every volatility baseline and model, in report order."""
+    return {**volatility_backtest.BASELINE_FACTORIES, **volatility_backtest.MODEL_FACTORIES}
 
 
 def plan_records(
@@ -119,6 +144,7 @@ def plan_records(
     factories: Mapping[str, PredictorFactory],
     context_factories: Mapping[str, PredictorFactory] | None = None,
     load_context: ContextLoader | None = None,
+    range_factories: Mapping[str, ForecasterFactory] | None = None,
 ) -> NightlyResult:
     """Work out which outcomes and predictions this run should append.
 
@@ -130,6 +156,7 @@ def plan_records(
     models' calls: the others are worked out first and do not depend on it.
     """
     context_factories = context_factories or {}
+    range_factories = range_factories or {}
     overlap = set(factories) & set(context_factories)
     if overlap:
         raise ValueError(f"names used for both a model and a context model: {sorted(overlap)}")
@@ -144,14 +171,17 @@ def plan_records(
         )
 
     outcomes = _missing_outcomes(prices, existing, now=now)
+    range_outcomes = _missing_range_outcomes(prices, existing, outcomes, now=now)
 
     already = {(r.model, r.based_on_session) for r in existing if isinstance(r, Prediction)}
     missing = [name for name in factories if (name, last_session) not in already]
     context_missing = [name for name in context_factories if (name, last_session) not in already]
+    ranged = {(r.model, r.based_on_session) for r in existing if isinstance(r, RangeForecast)}
+    ranges_missing = [name for name in range_factories if (name, last_session) not in ranged]
     predictions: list[Prediction] = []
     skipped: tuple[str, ...] = ()
     skip_reason: str | None = None
-    if missing or context_missing:
+    if missing or context_missing or ranges_missing:
         # One deadline for every call, context or not: nothing is filled in once
         # the next session could have opened.
         _, deadline = prediction_window(last_session)
@@ -163,6 +193,7 @@ def plan_records(
             )
     if missing:
         predictions += _calls(missing, factories, dataset, last_session, now)
+    range_forecasts = _ranges(ranges_missing, range_factories, prices, last_session, now)
     if context_missing:
         try:
             if load_context is None:
@@ -176,7 +207,98 @@ def plan_records(
             skip_reason = str(exc) if isinstance(exc, _EXPECTED) else f"{type(exc).__name__}: {exc}"
         else:
             predictions += context_calls
-    return NightlyResult(last_session, tuple(outcomes), tuple(predictions), skipped, skip_reason)
+    return NightlyResult(
+        last_session,
+        tuple(outcomes),
+        tuple(predictions),
+        skipped,
+        skip_reason,
+        tuple(range_outcomes),
+        tuple(range_forecasts),
+    )
+
+
+def _ranges(
+    names: Sequence[str],
+    factories: Mapping[str, ForecasterFactory],
+    prices: pd.DataFrame,
+    last_session: date,
+    now: datetime,
+) -> list[RangeForecast]:
+    """Fit each named forecaster on the sessions with a known next return and take
+    its range for the session after the last one, as simple returns."""
+    if not names:
+        return []
+    dataset = build_volatility_dataset(prices)
+    if dataset.latest()[0] != last_session:
+        raise NightlyError("the volatility dataset does not end on the latest session")
+    known = dataset.labelled()
+    row = dataset.features.iloc[[-1]]
+    forecasts: list[RangeForecast] = []
+    for name in names:
+        forecaster = factories[name]()
+        forecaster.fit(known.features, known.next_log_return)
+        forecast = forecaster.predict(row).iloc[0]
+        forecasts.append(
+            RangeForecast(
+                made_at=now,
+                based_on_session=last_session,
+                model=name,
+                level=RANGE_LEVEL,
+                lower_return=math.expm1(float(forecast[LOWER])),
+                upper_return=math.expm1(float(forecast[UPPER])),
+            )
+        )
+    return forecasts
+
+
+def _missing_range_outcomes(
+    prices: pd.DataFrame,
+    existing: Sequence[Record],
+    new_outcomes: Sequence[Outcome],
+    *,
+    now: datetime,
+) -> list[RangeOutcome]:
+    """A range outcome for every range forecast whose session has an outcome (on
+    record or about to be) and has not been scored yet.
+
+    The position is worked out against the bounds as they were written to the log.
+    """
+    target = {
+        o.previous_session: o.session
+        for o in [*(r for r in existing if isinstance(r, Outcome)), *new_outcomes]
+    }
+    scored = {(r.model, r.previous_session) for r in existing if isinstance(r, RangeOutcome)}
+    owed = [
+        r
+        for r in existing
+        if isinstance(r, RangeForecast)
+        and r.based_on_session in target
+        and (r.model, r.based_on_session) not in scored
+    ]
+    if not owed:
+        return []
+    next_return = compute_outcomes(prices)["next_return"]
+    results: list[RangeOutcome] = []
+    for forecast in owed:
+        stamp = pd.Timestamp(forecast.based_on_session)
+        if stamp not in next_return.index or pd.isna(next_return.loc[stamp]):
+            raise NightlyError(
+                f"session {forecast.based_on_session} has a range forecast but its next "
+                "return is not in the downloaded prices"
+            )
+        results.append(
+            RangeOutcome(
+                recorded_at=now,
+                session=target[forecast.based_on_session],
+                previous_session=forecast.based_on_session,
+                model=forecast.model,
+                position=range_position(
+                    forecast.lower_return, forecast.upper_return, float(next_return.loc[stamp])
+                ),
+            )
+        )
+    return results
 
 
 def _calls(
@@ -248,6 +370,7 @@ def run_nightly(
     get: Getter = sec_get,
     factories: Mapping[str, PredictorFactory] | None = None,
     context_factories: Mapping[str, PredictorFactory] | None = None,
+    range_factories: Mapping[str, ForecasterFactory] | None = None,
     dry_run: bool = False,
     min_rows: int = MIN_ROWS,
 ) -> NightlyResult:
@@ -277,9 +400,10 @@ def run_nightly(
             CONTEXT_MODEL_FACTORIES if context_factories is None else context_factories
         ),
         load_context=load_context,
+        range_factories=default_range_factories() if range_factories is None else range_factories,
     )
     if not dry_run:
-        append_records(log_path, [*result.outcomes, *result.predictions])
+        append_records(log_path, result.records)
     return result
 
 
@@ -287,11 +411,16 @@ def describe(result: NightlyResult, *, dry_run: bool) -> list[str]:
     """Plain-text lines saying what the run did."""
     verb = "would append" if dry_run else "appended"
     lines = [f"last completed session: {result.last_session}"]
-    if not result.outcomes and not result.predictions:
+    if not result.records:
         lines.append("nothing new to record")
     for outcome in result.outcomes:
         direction = "up" if outcome.went_up else "not up"
         lines.append(f"{verb} outcome: {outcome.session} closed {direction}")
+    for scored in result.range_outcomes:
+        lines.append(
+            f"{verb} range outcome: {scored.session} closed {scored.position} "
+            f"{scored.model}'s range"
+        )
     for prediction in result.predictions:
         direction = "up" if prediction.predicted_up else "down"
         probability = (
@@ -300,6 +429,12 @@ def describe(result: NightlyResult, *, dry_run: bool) -> list[str]:
         lines.append(
             f"{verb} prediction: {prediction.model} calls {direction}{probability} "
             f"for the session after {prediction.based_on_session}"
+        )
+    for forecast in result.range_forecasts:
+        lines.append(
+            f"{verb} range: {forecast.model} expects {forecast.lower_return:+.2%} to "
+            f"{forecast.upper_return:+.2%} ({forecast.level:.0%} range) for the session after "
+            f"{forecast.based_on_session}"
         )
     if result.skipped:
         lines.append(
@@ -324,6 +459,7 @@ def main(
     get: Getter = sec_get,
     factories: Mapping[str, PredictorFactory] | None = None,
     context_factories: Mapping[str, PredictorFactory] | None = None,
+    range_factories: Mapping[str, ForecasterFactory] | None = None,
     report: Callable[[str], None] = _print,
     min_rows: int = MIN_ROWS,
 ) -> int:
@@ -344,6 +480,7 @@ def main(
             get=get,
             factories=factories,
             context_factories=context_factories,
+            range_factories=range_factories,
             dry_run=args.dry_run,
             min_rows=min_rows,
         )
