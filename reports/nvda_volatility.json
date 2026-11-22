@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-22T03:18:00Z",
+  "generated_at": "2026-11-22T03:55:39Z",
   "symbol": "NVDA",
   "target": "next session's close-to-close return (adjusted), as a log return",
   "range_level": 0.8,
@@ -90,6 +90,22 @@
       "mean_width": 0.070152,
       "median_width": 0.066183,
       "mean_forecast_volatility": 0.031185
+    },
+    "xgboost_vol": {
+      "kind": "model",
+      "sessions": 5541,
+      "qlike": -6.132051,
+      "interval_score": 0.10183,
+      "coverage": 0.788125,
+      "coverage_interval": [
+        0.777297,
+        0.800221
+      ],
+      "share_below": 0.104133,
+      "share_above": 0.107742,
+      "mean_width": 0.066289,
+      "median_width": 0.059474,
+      "mean_forecast_volatility": 0.026087
     }
   },
   "comparisons": [
@@ -175,6 +191,62 @@
       "interval_score_difference_interval": [
         -0.001309,
         0.000289
+      ]
+    },
+    {
+      "forecaster": "xgboost_vol",
+      "reference": "constant",
+      "qlike_difference": -0.332516,
+      "qlike_difference_interval": [
+        -0.415207,
+        -0.24301
+      ],
+      "interval_score_difference": -0.01238,
+      "interval_score_difference_interval": [
+        -0.014411,
+        -0.010315
+      ]
+    },
+    {
+      "forecaster": "xgboost_vol",
+      "reference": "rolling_21",
+      "qlike_difference": -0.110648,
+      "qlike_difference_interval": [
+        -0.205014,
+        -0.027729
+      ],
+      "interval_score_difference": -0.002344,
+      "interval_score_difference_interval": [
+        -0.003446,
+        -0.001272
+      ]
+    },
+    {
+      "forecaster": "xgboost_vol",
+      "reference": "ewma_94",
+      "qlike_difference": -0.042931,
+      "qlike_difference_interval": [
+        -0.125021,
+        0.030342
+      ],
+      "interval_score_difference": -0.000965,
+      "interval_score_difference_interval": [
+        -0.001882,
+        -9.5e-05
+      ]
+    },
+    {
+      "forecaster": "xgboost_vol",
+      "reference": "har",
+      "qlike_difference": 0.024001,
+      "qlike_difference_interval": [
+        -0.033551,
+        0.089654
+      ],
+      "interval_score_difference": -0.000431,
+      "interval_score_difference_interval": [
+        -0.001231,
+        0.000382
       ]
     }
   ],

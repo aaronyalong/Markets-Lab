@@ -46,7 +46,11 @@ from markets_lab.analysis.nvda.volatility.forecasters import (
     forecast_frame,
 )
 from markets_lab.analysis.nvda.volatility.metrics import inside, interval_scores, qlike_losses
-from markets_lab.analysis.nvda.volatility.models import HAR_INPUTS, HarVolatility
+from markets_lab.analysis.nvda.volatility.models import (
+    HAR_INPUTS,
+    HarVolatility,
+    XGBoostVolatility,
+)
 from markets_lab.collectors.nvda_prices import save_csv
 from price_frames import at, make_prices
 
@@ -241,11 +245,14 @@ class TestEveryForecaster:
 
     def test_training_outcomes_matter(self, name: str, labelled: VolatilityDataset) -> None:
         # If the outcomes it is trained on had no effect, the test above would be
-        # empty. Doubling them widens every range.
+        # empty. Doubling them doubles the ranges. (For trees a few rows land a
+        # little either side of double: rounding can tip which split a tree takes.)
         doubled = VolatilityDataset(labelled.features, labelled.next_log_return * 2.0)
         normal = walk_forward_ranges(labelled, ALL_FACTORIES[name], CONFIG)
         wider = walk_forward_ranges(doubled, ALL_FACTORIES[name], CONFIG)
-        assert ((wider[UPPER] - wider[LOWER]) > 1.9 * (normal[UPPER] - normal[LOWER])).all()
+        ratio = (wider[UPPER] - wider[LOWER]) / (normal[UPPER] - normal[LOWER])
+        assert ratio.median() == pytest.approx(2.0, rel=0.01)
+        assert (ratio > 1.5).all()
 
     def test_predict_before_fit_raises(self, name: str, labelled: VolatilityDataset) -> None:
         with pytest.raises(RuntimeError, match="fit must be called"):
@@ -334,7 +341,7 @@ class TestHar:
     """The regression on volatility at three speeds."""
 
     def test_registered_models(self) -> None:
-        assert list(MODEL_FACTORIES) == ["har"]
+        assert list(MODEL_FACTORIES) == ["har", "xgboost_vol"]
         assert HAR_INPUTS == ("range_pct", "vol_5", "vol_21")
 
     def test_it_reads_only_its_three_inputs(self, labelled: VolatilityDataset) -> None:
@@ -395,6 +402,53 @@ class TestHar:
     def test_coefficients_need_a_fit(self) -> None:
         with pytest.raises(RuntimeError, match="fit must be called"):
             HarVolatility().coefficients()
+
+
+class TestXGBoostVolatility:
+    def test_it_has_the_direction_models_tree_settings(self, labelled: VolatilityDataset) -> None:
+        from markets_lab.analysis.nvda.models import xgb
+
+        model = fitted("xgboost_vol", labelled)
+        settings = model._model.get_params()
+        assert (settings["n_estimators"], settings["max_depth"]) == (xgb.N_TREES, xgb.MAX_DEPTH)
+        assert settings["learning_rate"] == xgb.LEARNING_RATE
+        assert (settings["subsample"], settings["colsample_bytree"]) == (
+            xgb.ROW_SAMPLE,
+            xgb.FEATURE_SAMPLE,
+        )
+        assert (settings["random_state"], settings["n_jobs"]) == (xgb.SEED, 1)
+        assert settings["objective"] == "reg:gamma"
+
+    def test_it_starts_from_the_average_squared_return_of_its_training_rows(
+        self, labelled: VolatilityDataset
+    ) -> None:
+        outcome = labelled.next_log_return.iloc[:TRAIN_ROWS].to_numpy()
+        model = fitted("xgboost_vol", labelled)
+        assert model._model.get_params()["base_score"] == pytest.approx(np.mean(outcome**2))
+
+    def test_it_learns_a_threshold_the_regression_cannot(self) -> None:
+        # Made-up data where volatility triples whenever one column is above zero.
+        rng = np.random.default_rng(12)
+        n = 6_000
+        features = pd.DataFrame({name: rng.normal(0, 1, n) for name in ("a", "b", "c")})
+        volatility = np.where(features["a"] > 0, 0.03, 0.01)
+        outcome = pd.Series(rng.normal(0.0, 1.0, n) * volatility)
+        model = XGBoostVolatility()
+        model.fit(features.iloc[:4_000], outcome.iloc[:4_000])
+        forecast = model.predict(features.iloc[4_000:])[VOLATILITY].to_numpy()
+        high = features["a"].iloc[4_000:].to_numpy() > 0
+        assert forecast[high].mean() == pytest.approx(0.03, rel=0.2)
+        assert forecast[~high].mean() == pytest.approx(0.01, rel=0.2)
+        assert model.feature_importance().idxmax() == "a"
+
+    def test_missing_feature_values_are_refused(self, labelled: VolatilityDataset) -> None:
+        # The trees would otherwise treat a hole as information.
+        broken = labelled.features.copy()
+        broken.loc[broken.index[10], "macd"] = np.nan
+        with pytest.raises(ValueError, match="missing or infinite"):
+            XGBoostVolatility().fit(broken, labelled.next_log_return)
+        with pytest.raises(ValueError, match="missing or infinite"):
+            fitted("xgboost_vol", labelled).predict(broken)
 
 
 class TestScores:
@@ -620,7 +674,13 @@ class TestCommandLine:
         )
         assert code == 0
         written = json.loads(out.read_text())
-        assert list(written["forecasters"]) == ["constant", "rolling_21", "ewma_94", "har"]
+        assert list(written["forecasters"]) == [
+            "constant",
+            "rolling_21",
+            "ewma_94",
+            "har",
+            "xgboost_vol",
+        ]
         assert written["validation"]["initial_train_sessions"] == 1_260
         assert written["intervals"]["resamples"] == 50
         assert lines[-1] == f"\nwrote {out}"

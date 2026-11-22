@@ -52,7 +52,7 @@ from markets_lab.analysis.nvda.volatility.forecasters import (
     RollingVolatility,
 )
 from markets_lab.analysis.nvda.volatility.metrics import inside, interval_scores, qlike_losses
-from markets_lab.analysis.nvda.volatility.models import HarVolatility
+from markets_lab.analysis.nvda.volatility.models import HarVolatility, XGBoostVolatility
 from markets_lab.collectors.nvda_prices import (
     DEFAULT_CSV_PATH,
     MARKET_TZ,
@@ -77,6 +77,7 @@ BASELINE_FACTORIES: dict[str, ForecasterFactory] = {
 
 MODEL_FACTORIES: dict[str, ForecasterFactory] = {
     "har": HarVolatility,
+    "xgboost_vol": XGBoostVolatility,
 }
 """Models are added here one at a time, each after the previous one is measured."""
 

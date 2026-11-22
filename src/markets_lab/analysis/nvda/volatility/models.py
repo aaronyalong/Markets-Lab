@@ -15,6 +15,14 @@ a log link). Being log-linear, it can never forecast a negative variance.
 
 Choices fixed in advance, not tuned on the results: these three inputs, no
 regularisation, and the shared rule that turns a volatility into a range.
+
+`xgboost_vol` is gradient-boosted trees on every column of the volatility dataset,
+so it can use thresholds and combinations the regression cannot. It has the same
+tree settings as the direction model (200 trees of depth 3, learning rate 0.05,
+80% of rows and columns per tree, a fixed seed, one thread), taken from that
+module so the two cannot drift apart. Like `har` it predicts the next session's
+variance on a log scale and is fitted with the gamma loss, which is QLIKE. It
+starts from the average squared return of its training rows.
 """
 
 from __future__ import annotations
@@ -22,7 +30,16 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import GammaRegressor
+from xgboost import XGBRegressor
 
+from markets_lab.analysis.nvda.models.xgb import (
+    FEATURE_SAMPLE,
+    LEARNING_RATE,
+    MAX_DEPTH,
+    N_TREES,
+    ROW_SAMPLE,
+    SEED,
+)
 from markets_lab.analysis.nvda.volatility.forecasters import ScaledRangeForecaster
 
 HAR_INPUTS = ("range_pct", "vol_5", "vol_21")
@@ -61,6 +78,54 @@ class HarVolatility(ScaledRangeForecaster):
             raise RuntimeError("fit must be called before reading coefficients")
         values = [float(self._model.intercept_), *self._model.coef_.tolist()]
         return pd.Series(values, index=["constant", *HAR_INPUTS], name="coefficient")
+
+
+class XGBoostVolatility(ScaledRangeForecaster):
+    """Gradient-boosted trees forecasting next-session variance from every column."""
+
+    name = "xgboost_vol"
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._model: XGBRegressor | None = None
+
+    def _learn(self, features: pd.DataFrame, outcomes: np.ndarray) -> None:
+        target = np.maximum(outcomes**2, SQUARED_RETURN_FLOOR)
+        model = XGBRegressor(
+            n_estimators=N_TREES,
+            max_depth=MAX_DEPTH,
+            learning_rate=LEARNING_RATE,
+            subsample=ROW_SAMPLE,
+            colsample_bytree=FEATURE_SAMPLE,
+            objective="reg:gamma",
+            base_score=float(target.mean()),
+            tree_method="hist",
+            random_state=SEED,
+            n_jobs=1,
+        )
+        model.fit(_finite_matrix(features), target)
+        self._model = model
+
+    def _volatility(self, features: pd.DataFrame) -> np.ndarray:
+        if self._model is None:
+            raise RuntimeError("fit must be called before predict")
+        if len(features) == 0:
+            return np.zeros(0)
+        variance = self._model.predict(_finite_matrix(features)).astype("float64")
+        return np.sqrt(variance)
+
+    def feature_importance(self) -> pd.Series:
+        """Share of the total gain each column contributed, for the method notes."""
+        if self._model is None:
+            raise RuntimeError("fit must be called before reading importances")
+        return pd.Series(self._model.feature_importances_, index=self._columns, name="importance")
+
+
+def _finite_matrix(features: pd.DataFrame) -> np.ndarray:
+    matrix = features.to_numpy(dtype="float64")
+    if not np.isfinite(matrix).all():
+        raise ValueError("features have missing or infinite values")
+    return matrix
 
 
 def _log_inputs(features: pd.DataFrame) -> np.ndarray:
