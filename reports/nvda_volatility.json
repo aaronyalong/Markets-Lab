@@ -1,0 +1,131 @@
+{
+  "generated_at": "2026-11-22T03:13:11Z",
+  "symbol": "NVDA",
+  "target": "next session's close-to-close return (adjusted), as a log return",
+  "range_level": 0.8,
+  "data": {
+    "sessions_with_features": 6802,
+    "first_feature_session": "1999-11-04",
+    "last_labelled_session": "2026-11-18",
+    "tested_sessions": 5541,
+    "first_tested_session": "2004-11-10",
+    "last_tested_session": "2026-11-18",
+    "realised_volatility": 0.030421,
+    "mean_absolute_move": 0.021334
+  },
+  "validation": {
+    "scheme": "walk-forward, expanding window",
+    "initial_train_sessions": 1260,
+    "refit_every_sessions": 21,
+    "folds": 264
+  },
+  "intervals": {
+    "confidence": 0.95,
+    "method": "paired moving-block bootstrap",
+    "block_length_sessions": 21,
+    "resamples": 2000,
+    "seed": 20261119
+  },
+  "forecasters": {
+    "constant": {
+      "kind": "baseline",
+      "sessions": 5541,
+      "qlike": -5.799535,
+      "interval_score": 0.11421,
+      "coverage": 0.879444,
+      "coverage_interval": [
+        0.86248,
+        0.895145
+      ],
+      "share_below": 0.061361,
+      "share_above": 0.059195,
+      "mean_width": 0.087679,
+      "median_width": 0.082062,
+      "mean_forecast_volatility": 0.042639
+    },
+    "rolling_21": {
+      "kind": "baseline",
+      "sessions": 5541,
+      "qlike": -6.021403,
+      "interval_score": 0.104174,
+      "coverage": 0.794802,
+      "coverage_interval": [
+        0.78397,
+        0.805996
+      ],
+      "share_below": 0.100162,
+      "share_above": 0.105035,
+      "mean_width": 0.068802,
+      "median_width": 0.060681,
+      "mean_forecast_volatility": 0.027697
+    },
+    "ewma_94": {
+      "kind": "baseline",
+      "sessions": 5541,
+      "qlike": -6.08912,
+      "interval_score": 0.102794,
+      "coverage": 0.798773,
+      "coverage_interval": [
+        0.787944,
+        0.810143
+      ],
+      "share_below": 0.09908,
+      "share_above": 0.102148,
+      "mean_width": 0.067416,
+      "median_width": 0.060246,
+      "mean_forecast_volatility": 0.028205
+    }
+  },
+  "comparisons": [
+    {
+      "forecaster": "rolling_21",
+      "reference": "constant",
+      "qlike_difference": -0.221868,
+      "qlike_difference_interval": [
+        -0.33185,
+        -0.098994
+      ],
+      "interval_score_difference": -0.010036,
+      "interval_score_difference_interval": [
+        -0.012447,
+        -0.007726
+      ]
+    },
+    {
+      "forecaster": "ewma_94",
+      "reference": "constant",
+      "qlike_difference": -0.289585,
+      "qlike_difference_interval": [
+        -0.388256,
+        -0.178536
+      ],
+      "interval_score_difference": -0.011415,
+      "interval_score_difference_interval": [
+        -0.013606,
+        -0.009258
+      ]
+    },
+    {
+      "forecaster": "ewma_94",
+      "reference": "rolling_21",
+      "qlike_difference": -0.067717,
+      "qlike_difference_interval": [
+        -0.094692,
+        -0.043785
+      ],
+      "interval_score_difference": -0.001379,
+      "interval_score_difference_interval": [
+        -0.001976,
+        -0.000841
+      ]
+    }
+  ],
+  "caveats": [
+    "Research only, not financial advice.",
+    "The backtest is where forecasters are compared, so it flatters whichever looks best. The live prediction log is the real test.",
+    "A squared daily return is a very noisy measure of that day's volatility. QLIKE ranks forecasters correctly despite that, but its level has no plain meaning.",
+    "Ranges are for the close-to-close return, adjusted for dividends and splits.",
+    "A range is built to hold 80% of outcomes on average over many days. On any one day it either holds the outcome or it does not.",
+    "Several forecasters are compared, so some intervals will exclude zero by chance."
+  ]
+}
