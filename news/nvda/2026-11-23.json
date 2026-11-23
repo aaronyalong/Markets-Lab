@@ -1,0 +1,63 @@
+{
+  "collected_at": "2026-11-23T22:30:40Z",
+  "window_hours": 24,
+  "failed_sources": [],
+  "items": [
+    {
+      "source": "yahoo_finance",
+      "publisher": "Yahoo Finance Video",
+      "title": "Ex-Nvidia employee: 'Stability and accountability can coexist'",
+      "url": "https://finance.yahoo.com/video/ex-nvidia-employee-stability-and-accountability-can-coexist-221105947.html",
+      "published_at": "2026-11-23T22:11:05Z"
+    },
+    {
+      "source": "yahoo_finance",
+      "publisher": "Yahoo Finance Video",
+      "title": "Nvidia's stability is a systemic issue for the US now, this AI CEO says",
+      "url": "https://finance.yahoo.com/video/nvidias-stability-is-a-systemic-issue-for-the-us-now-this-ai-ceo-says-220035003.html",
+      "published_at": "2026-11-23T22:00:35Z"
+    },
+    {
+      "source": "yahoo_finance",
+      "publisher": "Yahoo Finance Video",
+      "title": "3 truths that Jensen Huang's return to Nvidia made clear",
+      "url": "https://finance.yahoo.com/video/3-truths-that-jensen-huangs-return-to-nvidia-made-clear-213610744.html",
+      "published_at": "2026-11-23T21:36:10Z"
+    },
+    {
+      "source": "yahoo_finance",
+      "publisher": "Yahoo Finance",
+      "title": "Nvidia gains nearly $1T as Trump says nobody could 'revive the stock like it's being revived'",
+      "url": "https://finance.yahoo.com/markets/article/nvidia-gains-nearly-1t-as-trump-says-nobody-could-revive-the-stock-like-its-being-revived-194634496.html",
+      "published_at": "2026-11-23T19:46:34Z"
+    },
+    {
+      "source": "yahoo_finance",
+      "publisher": "Yahoo Finance Video",
+      "title": "Jensen Huang greeted by Nvidia employees after reinstatement",
+      "url": "https://finance.yahoo.com/video/jensen-huang-greeted-by-nvidia-employees-after-reinstatement-194010984.html",
+      "published_at": "2026-11-23T19:39:50Z"
+    },
+    {
+      "source": "nvidia_newsroom",
+      "publisher": "NVIDIA Newsroom",
+      "title": "Merry Making: Play, Build and Create With NVIDIA Technologies This Holiday Season",
+      "url": "https://blogs.nvidia.com/blog/nvidia-technologies-holidays-2026/",
+      "published_at": "2026-11-23T17:00:08Z"
+    },
+    {
+      "source": "sec_edgar",
+      "publisher": "SEC EDGAR",
+      "title": "Form 8-K: current report (departure or appointment of directors or officers)",
+      "url": "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000090/nvda-20261122.htm",
+      "published_at": "2026-11-23T13:57:54Z"
+    },
+    {
+      "source": "nvidia_newsroom",
+      "publisher": "NVIDIA Newsroom",
+      "title": "NVIDIA Board Reinstates Jensen Huang as President, CEO and Board Director",
+      "url": "https://nvidianews.nvidia.com/news/nvidia-board-reinstates-jensen-huang-as-president-ceo-and-board-director",
+      "published_at": "2026-11-23T13:55:00Z"
+    }
+  ]
+}
