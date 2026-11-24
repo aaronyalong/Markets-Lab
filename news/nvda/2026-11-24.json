@@ -1,0 +1,14 @@
+{
+  "collected_at": "2026-11-24T21:04:13Z",
+  "window_hours": 24,
+  "failed_sources": [],
+  "items": [
+    {
+      "source": "yahoo_finance",
+      "publisher": "Yahoo Finance",
+      "title": "Why HubSpot's CEO thinks Jensen Huang came back to Nvidia too soon",
+      "url": "https://finance.yahoo.com/markets/article/why-hubspots-ceo-thinks-jensen-huang-came-back-to-nvidia-too-soon-183053258.html",
+      "published_at": "2026-11-24T18:30:53Z"
+    }
+  ]
+}
