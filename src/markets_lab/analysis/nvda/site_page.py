@@ -48,6 +48,7 @@ from markets_lab.analysis.nvda.prediction_log import (
 )
 from markets_lab.analysis.nvda.volatility import backtest as volatility_backtest
 from markets_lab.collectors.nvda_news import Collection, NewsError, NewsItem, load_recent
+from markets_lab.market_calendar import next_session
 
 GENERATED_DIR = "_generated"
 BUY_AND_HOLD = "always_up"
@@ -249,11 +250,13 @@ def tomorrow_fragment(records: Sequence[Record]) -> str:
     calls = scored[scored["based_on_session"] == latest].set_index("model")
     pending = bool(calls["correct"].isna().all())
     if pending:
-        heading = f"Calls for the next session after {_long_date(latest)}"
-        note = "Written before that session opened. It has not been scored yet."
+        heading = f"Calls for {_upcoming(latest)}"
+        sub = _pending_note(latest, "calls")
+        note = "Written before that session opened."
     else:
         target = calls["target_session"].iloc[0]
-        heading = f"Latest calls were for {_long_date(target)}"
+        heading = f"Calls for {_session_time(target)}"
+        sub = '<p class="call-sub muted">Scored.</p>'
         note = (
             "That session is over and these have been scored. "
             "New calls appear after the next nightly run."
@@ -282,7 +285,7 @@ def tomorrow_fragment(records: Sequence[Record]) -> str:
             "</div>"
         )
     return _raw(
-        f'<p class="call-heading">{html.escape(heading)}</p>'
+        f'<p class="call-heading">{heading}</p>{sub}'
         f'<div class="call-grid">{"".join(cards)}</div>'
         f'<p class="muted small">{html.escape(note)} An experiment, not advice.</p>'
     )
@@ -306,10 +309,13 @@ def status_fragment(records: Sequence[Record]) -> str:
     latest = max(scored["based_on_session"])
     calls = scored[scored["based_on_session"] == latest].set_index("model")
     record = {row.name: row for row in track_record(scored)}
-    items = [
-        '<span class="status-item"><span class="status-key">Model calls after the close of'
-        f"</span>{html.escape(_short_date(latest))}</span>"
-    ]
+    pending = bool(calls["correct"].isna().all())
+    when = (
+        _upcoming(latest, short=True)
+        if pending
+        else _session_time(calls["target_session"].iloc[0], short=True)
+    )
+    items = [f'<span class="status-item"><span class="status-key">Calls for</span>{when}</span>']
     for name in ordered(list(calls.index)):
         if kind_of(name) != "model":
             continue
@@ -603,11 +609,13 @@ def range_fragment(records: Sequence[Record], report: Mapping[str, Any]) -> str:
     pending = bool(rows["position"].isna().all())
     level = float(rows["level"].iloc[0])
     if pending:
-        heading = f"Range for the next session after {_long_date(latest)}"
-        note = "Written before that session opened. It has not been scored yet."
+        heading = f"Ranges for {_upcoming(latest)}"
+        sub = _pending_note(latest, "ranges")
+        note = "Written before that session opened."
     else:
         target = rows["target_session"].dropna().iloc[0]
-        heading = f"Latest ranges were for {_long_date(target)}"
+        heading = f"Ranges for {_session_time(target)}"
+        sub = '<p class="call-sub muted">Scored.</p>'
         note = (
             "That session is over and these have been scored. "
             "New ranges appear after the next nightly run."
@@ -648,7 +656,7 @@ def range_fragment(records: Sequence[Record], report: Mapping[str, Any]) -> str:
         f"<th>{level:.0%} range</th>{result_column}</tr></thead><tbody>{body}</tbody></table>"
     )
     return _raw(
-        f'<p class="call-heading">{html.escape(heading)}</p>'
+        f'<p class="call-heading">{heading}</p>{sub}'
         f"{headline}{finding}{table}"
         f'<p class="muted small">{html.escape(note)} An experiment, not advice.</p>'
     )
@@ -964,6 +972,44 @@ def _direction_class(up: bool) -> str:
 def _direction_text(up: bool) -> str:
     """Arrow and word together, so direction never depends on colour alone."""
     return "▲ Up" if up else "▼ Down"
+
+
+def _session_time(day: date, *, short: bool = False, certain: bool = False) -> str:
+    """A session's date as a `<time>` element.
+
+    Only a `certain` date carries `data-certain`, which lets the page's script
+    (site/_includes/session-dates.html) add "today" or "tomorrow" in New York time.
+    Every other date stays plain.
+    """
+    text = _short_date(day) if short else _long_date(day)
+    marker = ' data-certain="true"' if certain else ""
+    return (
+        f'<time class="session-date" datetime="{day.isoformat()}"{marker}>'
+        f"{html.escape(text)}</time>"
+    )
+
+
+def _upcoming(latest: date, *, short: bool = False) -> str:
+    """The session after `latest`, worked out from NYSE's holiday rules."""
+    upcoming = next_session(latest)
+    return _session_time(upcoming.day, short=short, certain=upcoming.certain)
+
+
+def _pending_note(latest: date, what: str) -> str:
+    """When unscored calls or ranges were made, and a hidden line the page's script
+    shows once their session has closed (only for a certain date)."""
+    upcoming = next_session(latest)
+    closed = (
+        f'<span class="session-closed" data-session="{upcoming.day.isoformat()}" '
+        f'data-certain="true" hidden> That session has closed; the {what} are scored on '
+        "the next nightly run.</span>"
+        if upcoming.certain
+        else ""
+    )
+    return (
+        f'<p class="call-sub muted">Made after the close on {html.escape(_long_date(latest))}. '
+        f"Not scored yet.{closed}</p>"
+    )
 
 
 def _long_date(day: date) -> str:

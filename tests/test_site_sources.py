@@ -142,7 +142,7 @@ def test_motion_is_switched_off_for_people_who_ask_for_less() -> None:
     assert guard < countup.index("requestAnimationFrame")
     # A stalled animation must not leave a wrong number on the page.
     assert "setTimeout(finish, duration + 250);" in countup
-    assert "include-after-body: _includes/countup.html" in CONFIG.read_text()
+    assert "      - _includes/countup.html\n" in CONFIG.read_text()
 
     # The scrolling tape is swapped for a static row of tickers.
     ticker = (SITE / "_includes" / "ticker.md").read_text()
@@ -234,8 +234,8 @@ def test_nvidia_page_has_the_chart_the_notice_and_every_generated_section() -> N
     for heading in (
         "NVIDIA headlines",
         "Live chart",
-        "Tomorrow's call",
-        "Tomorrow's range",
+        "Latest calls",
+        "Latest range",
         "Track record",
         "Method",
     ):

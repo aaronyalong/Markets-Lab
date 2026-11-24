@@ -80,7 +80,7 @@ do not use it; they work from daily closing data only.]{.muted .small}
 
 [The latest calls]{.eyebrow}
 
-## Tomorrow's call {.section-title}
+## Latest calls {.section-title}
 
 {{< include /_generated/tomorrow.md >}}
 
@@ -90,7 +90,7 @@ do not use it; they work from daily closing data only.]{.muted .small}
 
 [The size of the move]{.eyebrow}
 
-## Tomorrow's range {.section-title}
+## Latest range {.section-title}
 
 A separate question from direction: how big is the next session's move likely to
 be? Each forecaster gives a range that is meant to hold the move four days out of

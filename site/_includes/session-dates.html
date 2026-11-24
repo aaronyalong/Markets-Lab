@@ -1,0 +1,66 @@
+<script>
+  // Says "today" or "tomorrow" beside the date of calls and ranges that have not
+  // been scored yet, and says so once their session has closed.
+  //
+  // The date itself is already in the HTML, so the page reads correctly without
+  // JavaScript. Only dates marked data-certain="true" get a word: the page builder
+  // marks a date certain only when NYSE's published holiday list confirms it (see
+  // src/markets_lab/market_calendar.py). Every other date stays plain.
+  //
+  // "Today" is the visitor's current date in New York, where the market is.
+  (function () {
+    function newYorkDate(now) {
+      var parts = {};
+      new Intl.DateTimeFormat("en-US", {
+        timeZone: "America/New_York",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit"
+      })
+        .formatToParts(now)
+        .forEach(function (part) {
+          parts[part.type] = part.value;
+        });
+      return parts.year + "-" + parts.month + "-" + parts.day;
+    }
+
+    function addDays(isoDate, days) {
+      var moment = new Date(isoDate + "T12:00:00Z");
+      moment.setUTCDate(moment.getUTCDate() + days);
+      return moment.toISOString().slice(0, 10);
+    }
+
+    // "today", "tomorrow", "past" or null for a session date (YYYY-MM-DD).
+    function relativeDay(session, now) {
+      var today = newYorkDate(now);
+      if (session === today) return "today";
+      if (session === addDays(today, 1)) return "tomorrow";
+      if (session < today) return "past";
+      return null;
+    }
+
+    if (typeof module !== "undefined" && module.exports) {
+      module.exports = { relativeDay: relativeDay, newYorkDate: newYorkDate };
+      return;
+    }
+
+    var now = new Date();
+    document
+      .querySelectorAll('time.session-date[data-certain="true"]')
+      .forEach(function (element) {
+        var when = relativeDay(element.getAttribute("datetime"), now);
+        if (when !== "today" && when !== "tomorrow") return;
+        var word = document.createElement("span");
+        word.className = "session-relative";
+        word.textContent = when + ", ";
+        element.parentNode.insertBefore(word, element);
+      });
+    document
+      .querySelectorAll('.session-closed[data-certain="true"]')
+      .forEach(function (element) {
+        if (relativeDay(element.getAttribute("data-session"), now) === "past") {
+          element.hidden = false;
+        }
+      });
+  })();
+</script>

@@ -155,12 +155,13 @@ class TestTomorrow:
 
     def test_shows_the_latest_unscored_calls(self) -> None:
         text = text_of(tomorrow_fragment(log_records()))
-        assert "Calls for the next session after Monday 18 March 2030" in text
+        assert "Calls for Tuesday 19 March 2030" in text
+        assert "Made after the close on Monday 18 March 2030." in text
         assert "Logistic regression" in text and "Always up" in text
         assert "▲ Up" in text
         assert "Model's probability of up: 53%" in text
         assert "A fixed rule: no probability." in text
-        assert "It has not been scored yet." in text
+        assert "Not scored yet." in text
 
     def test_every_set_of_calls_is_labelled_as_an_experiment(self) -> None:
         assert "An experiment, not advice." in text_of(tomorrow_fragment(log_records()))
@@ -169,10 +170,55 @@ class TestTomorrow:
 
     def test_once_scored_it_says_so_and_shows_the_result(self) -> None:
         text = text_of(tomorrow_fragment([*log_records(), went(TUE, MON, False)]))
-        assert "Latest calls were for Tuesday 19 March 2030" in text
+        assert "Calls for Tuesday 19 March 2030" in text
         assert "these have been scored" in text
         assert "Wrong" in text  # both called up; the session did not close up
-        assert "Calls for the next session" not in text
+        assert "Not scored yet." not in text
+
+    def test_a_scored_date_comes_from_the_log_and_gets_no_today_or_tomorrow(self) -> None:
+        # The log says the session after Monday was Wednesday (say Tuesday closed
+        # at short notice); the page must follow the log, not the holiday rules.
+        wednesday = date(2030, 3, 20)
+        fragment = tomorrow_fragment([*log_records(), went(wednesday, MON, True)])
+        assert "Calls for Wednesday 20 March 2030" in text_of(fragment)
+        assert "data-certain" not in fragment
+
+    def test_the_date_skips_weekends_and_holidays(self) -> None:
+        # Friday 20 November 2026 -> Monday 23; Wednesday 25 -> Friday 27, past
+        # Thanksgiving.
+        for based_on, expected in (
+            (date(2026, 11, 20), "Monday 23 November 2026"),
+            (date(2026, 11, 25), "Friday 27 November 2026"),
+        ):
+            text = text_of(tomorrow_fragment([call(based_on, "logistic", True, 0.6)]))
+            assert f"Calls for {expected}" in text
+
+    def test_a_date_inside_nyses_published_calendar_can_say_today_or_tomorrow(self) -> None:
+        fragment = tomorrow_fragment([call(date(2026, 11, 23), "logistic", True, 0.6)])
+        assert (
+            '<time class="session-date" datetime="2026-11-24" data-certain="true">'
+            "Tuesday 24 November 2026</time>"
+        ) in fragment
+        # Shown by the page's script only once the session has closed.
+        assert re.search(
+            r'<span class="session-closed" data-session="2026-11-24" data-certain="true" '
+            r"hidden> That session has closed; the calls are scored on the next nightly run\.",
+            fragment,
+        )
+
+    def test_a_date_outside_the_published_calendar_stays_plain(self) -> None:
+        # 2030 is beyond the years NYSE has published, so the date is shown without
+        # "today" or "tomorrow" and without the closed-session line.
+        fragment = tomorrow_fragment(log_records())
+        assert '<time class="session-date" datetime="2030-03-19">' in fragment
+        assert "data-certain" not in fragment
+        assert "session-closed" not in fragment
+
+    def test_a_next_session_in_an_unpublished_year_is_not_certain(self) -> None:
+        # Friday 29 December 2028 -> Tuesday 2 January 2029, after NYSE's list ends.
+        fragment = tomorrow_fragment([call(date(2028, 12, 29), "logistic", True, 0.6)])
+        assert "Calls for Tuesday 2 January 2029" in text_of(fragment)
+        assert "data-certain" not in fragment
 
     def test_down_calls_are_shown_as_down(self) -> None:
         text = text_of(tomorrow_fragment(log_records()[:2]))
@@ -202,9 +248,21 @@ class TestStatusStrip:
     def test_shows_each_models_latest_call_with_arrow_word_and_probability(self) -> None:
         fragment = status_fragment(log_records())
         text = text_of(fragment)
-        assert "Model calls after the close of Mon 18 Mar 2030" in text
+        assert "Calls for Tue 19 Mar 2030" in text
+        assert '<time class="session-date" datetime="2030-03-19">' in fragment
         assert re.search(r"Logistic regression\s+▲ Up\s+53%", text)
         assert '<span class="up">▲ Up</span>' in fragment
+
+    def test_once_scored_it_shows_the_session_from_the_log(self) -> None:
+        text = text_of(status_fragment([*log_records(), went(TUE, MON, True)]))
+        assert "Calls for Tue 19 Mar 2030" in text
+
+    def test_a_certain_date_is_marked_for_today_or_tomorrow(self) -> None:
+        fragment = status_fragment([call(date(2026, 11, 23), "logistic", True, 0.6)])
+        assert (
+            '<time class="session-date" datetime="2026-11-24" data-certain="true">'
+            "Tue 24 Nov 2026</time>"
+        ) in fragment
 
     def test_a_down_call_carries_the_arrow_and_the_word(self) -> None:
         fragment = status_fragment(log_records()[:2])
@@ -637,13 +695,15 @@ class TestRangeFragment:
     ) -> None:
         fragment = site_page.range_fragment(range_records(), volatility)
         text = text_of(fragment)
-        assert "Range for the next session after Friday 15 March 2030" in text
+        assert "Ranges for Monday 18 March 2030" in text
+        assert "Made after the close on Friday 15 March 2030." in text
         assert f'<div class="range-number">{MINUS}5.6% to +6.2%</div>' in fragment
         assert "<h4>Weighted recent average</h4>" in fragment
         assert "baseline · 80% range" in text
         assert "about 4 days in 5" in text
         assert "It says nothing about which way." in text
-        assert "It has not been scored yet. An experiment, not advice." in text
+        assert "Not scored yet." in text
+        assert "Written before that session opened. An experiment, not advice." in text
 
     def test_the_finding_sits_between_the_headline_and_the_table(
         self, volatility: dict[str, Any]
@@ -686,7 +746,8 @@ class TestRangeFragment:
         scored_only = range_records()[: 2 * len(FORECASTERS) + 1]
         fragment = site_page.range_fragment(scored_only, volatility)
         text = text_of(fragment)
-        assert "Latest ranges were for Friday 15 March 2030" in text
+        assert "Ranges for Friday 15 March 2030" in text
+        assert "Not scored yet." not in text
         assert "The move was inside the range." in text
         assert "<th>The move was</th>" in fragment
         assert "above the range" in text  # the long-run average missed

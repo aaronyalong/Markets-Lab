@@ -35,7 +35,9 @@ format:
   html:
     theme: [darkly, theme.scss]
     include-in-header: _includes/fonts.html
-    include-after-body: _includes/countup.html
+    include-after-body:
+      - _includes/countup.html
+      - _includes/session-dates.html
     toc: false
     canonical-url: true
     smooth-scroll: true
