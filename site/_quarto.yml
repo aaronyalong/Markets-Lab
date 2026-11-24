@@ -6,7 +6,11 @@ project:
   pre-render: uv run python -m markets_lab.analysis.nvda.site_page --site-dir .
   # Rewrites canonical links and the sitemap to the clean addresses the host
   # serves (it redirects ".html" to them).
-  post-render: uv run python -m markets_lab.site_urls --built-dir _site
+  post-render:
+    - uv run python -m markets_lab.site_urls --built-dir _site
+    # Makes only the author's name a link in the top bar (Quarto links the whole
+    # title home and has no option to leave it plain).
+    - uv run python -m markets_lab.site_brand --built-dir _site
 
 website:
   title: "Markets Lab"
@@ -16,6 +20,7 @@ website:
   description: "Hobby research on markets: every result has a baseline, an honest uncertainty, and no advice."
   navbar:
     # The brand carries the byline; page titles still use the plain site title.
+    # After each render markets_lab.site_brand makes the name the only link in it.
     title: "Markets Lab [by Aaron Yalong]{.brand-by}"
     right:
       - href: index.qmd

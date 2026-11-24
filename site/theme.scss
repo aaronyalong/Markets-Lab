@@ -100,6 +100,21 @@ a:hover {
   color: $lab-muted;
 }
 
+// The site name is plain text; only the author's name is a link (to the
+// portfolio). It is underlined on hover and focus so it reads as a link.
+.navbar-brand .brand-author {
+  color: $lab-text;
+  text-decoration: underline;
+  text-decoration-color: rgba($lab-accent, 0.6);
+  text-underline-offset: 0.2em;
+
+  &:hover,
+  &:focus-visible {
+    color: $lab-accent;
+    text-decoration-color: $lab-accent;
+  }
+}
+
 // Below the width where the menu collapses there is no room for one line, so
 // the byline sits under the name instead of being cut off.
 @media (max-width: 991.98px) {
@@ -458,6 +473,27 @@ a:hover {
   }
 }
 
+// The crystal ball version of the same picture: the chart sits inside the ball,
+// so the fan and the pulse grow from the new "today" point. Mist turns slowly
+// behind the chart and the glow breathes; under reduced motion both hold still
+// (the rule at the end of this file stops every animation).
+.crystal {
+  .cone-fan,
+  .cone-pulse {
+    transform-origin: 276px 186px;
+  }
+
+  .ball-swirl {
+    transform-origin: 270px 178px;
+    animation: swirl 28s linear infinite;
+  }
+
+  .ball-glow {
+    transform-origin: 270px 178px;
+    animation: breathe 6s ease-in-out infinite alternate;
+  }
+}
+
 // ------------------------------------------------------------------- home: cards
 
 .card-grid {
@@ -498,6 +534,11 @@ a:hover {
     color: $lab-muted;
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid $lab-border;
+
+    .ball-icon {
+      width: 1.75rem;
+      height: 1.75rem;
+    }
   }
 
   > section {
@@ -1221,6 +1262,22 @@ table {
   100% {
     opacity: 0;
     transform: scale(3.4);
+  }
+}
+
+@keyframes swirl {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes breathe {
+  from {
+    transform: scale(0.96);
+  }
+
+  to {
+    transform: scale(1.04);
   }
 }
 

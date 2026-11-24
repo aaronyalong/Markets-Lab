@@ -12,6 +12,8 @@ from pathlib import Path
 
 import pytest
 
+from markets_lab import site_brand
+
 SITE = Path(__file__).resolve().parents[1] / "site"
 CONFIG = SITE / "_quarto.yml"
 PAGES = sorted(p for p in SITE.rglob("*.qmd") if "_site" not in p.parts)
@@ -176,10 +178,31 @@ def home_cards() -> list[str]:
     return [card.split("\n:::", 1)[0] for card in grid.split("::: {.lab-card")[1:]]
 
 
+def test_the_home_page_never_says_predictor() -> None:
+    assert "predictor" not in (SITE / "index.qmd").read_text().lower()
+
+
+def test_the_home_picture_is_a_crystal_ball_labelled_as_an_illustration() -> None:
+    home = (SITE / "index.qmd").read_text()
+    svg = home[home.index('<svg class="cone crystal"') : home.index("</svg>")]
+    assert 'role="img"' in svg and 'aria-label="Illustration: a crystal ball' in svg
+    assert 'class="art-note">Illustration, not data.<' in home
+    # Its colours come from the site palette: no blue anywhere.
+    colours = set(re.findall(r"#[0-9a-fA-F]{6}", svg))
+    assert {"#1fd68f", "#9be564", "#a6f4d0"} <= colours
+    # The palette's dark greys lean very slightly blue (#0e1217, #1f2630); a colour
+    # whose blue leads both other channels by more than that reads as blue.
+    for colour in colours:
+        red, green, blue = (int(colour[i : i + 2], 16) for i in (1, 3, 5))
+        assert blue - max(red, green) <= 16, f"{colour} is blue"
+
+
 def test_home_has_one_live_card_and_one_coming_soon() -> None:
     cards = home_cards()
     assert len(cards) == 2
-    assert "NVIDIA predictor" in cards[0]
+    assert "### [NVIDIA [→]{.arrow}]" in cards[0]
+    assert "predictor" not in cards[0].lower()
+    assert '<svg class="ball-icon"' in cards[0]  # the crystal ball icon
     assert "experiments/nvidia.qmd" in cards[0]
     assert "Coming soon" not in cards[0]
     assert "Earnings explainer" in cards[1]
@@ -255,7 +278,14 @@ def test_the_site_url_is_set_and_public_addresses_are_cleaned_after_each_render(
     config = CONFIG.read_text()
     assert f'site-url: "{SITE_URL}"' in config
     assert "canonical-url: true" in config
-    assert "post-render: uv run python -m markets_lab.site_urls --built-dir _site" in config
+    assert "    - uv run python -m markets_lab.site_urls --built-dir _site\n" in config
+
+
+def test_only_the_authors_name_is_a_link_in_the_top_bar() -> None:
+    config = CONFIG.read_text()
+    assert "    - uv run python -m markets_lab.site_brand --built-dir _site\n" in config
+    # The brand's link and the footer's go to the same portfolio address.
+    assert f"Built by [Aaron Yalong]({site_brand.PORTFOLIO})" in config
 
 
 @pytest.mark.skipif(not BUILT.is_dir(), reason="site has not been rendered")
@@ -284,6 +314,16 @@ def test_headline_numbers_are_in_the_built_html_without_javascript() -> None:
     # Three for the direction backtest and three for the range backtest.
     assert len(numbers) == 6
     assert all(re.search(r"\d", number) for number in numbers)
+
+
+@pytest.mark.skipif(not BUILT.is_dir(), reason="site has not been rendered")
+def test_every_built_page_links_only_the_authors_name_in_the_top_bar() -> None:
+    for page in sorted(BUILT.rglob("*.html")):
+        if "site_libs" in page.parts:
+            continue
+        built = page.read_text()
+        assert site_brand.OUR_BRAND in built, page
+        assert '<a class="navbar-brand"' not in built, page
 
 
 @pytest.mark.skipif(not BUILT.is_dir(), reason="site has not been rendered")

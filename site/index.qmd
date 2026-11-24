@@ -20,49 +20,95 @@ answer, including when the answer is "it didn't work".
 :::: {.hero-art}
 
 ```{=html}
-<svg class="cone" viewBox="0 0 540 380" role="img" aria-label="Illustration: a line of past values reaching today, then widening into a cone of uncertainty.">
+<svg class="cone crystal" viewBox="0 0 540 400" role="img" aria-label="Illustration: a crystal ball on a stand. Inside it, a line of past values reaches today, then widens into a cone of uncertainty.">
   <defs>
+    <radialGradient id="ballFill" cx="0.42" cy="0.36" r="0.7">
+      <stop offset="0" stop-color="#173a2b"/>
+      <stop offset="0.55" stop-color="#0b1712"/>
+      <stop offset="0.88" stop-color="#07100c"/>
+      <stop offset="1" stop-color="#1fd68f" stop-opacity="0.45"/>
+    </radialGradient>
+    <radialGradient id="ballGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#1fd68f" stop-opacity="0.38"/>
+      <stop offset="0.6" stop-color="#9be564" stop-opacity="0.10"/>
+      <stop offset="1" stop-color="#1fd68f" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="rimGrad" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#a6f4d0"/>
+      <stop offset="0.5" stop-color="#1fd68f"/>
+      <stop offset="1" stop-color="#9be564"/>
+    </linearGradient>
     <linearGradient id="lineGrad" x1="0" x2="1" y1="0" y2="0">
       <stop offset="0" stop-color="#1fd68f" stop-opacity="0.55"/>
       <stop offset="0.6" stop-color="#9be564"/>
       <stop offset="1" stop-color="#ffffff"/>
     </linearGradient>
     <linearGradient id="areaGrad" x1="0" x2="0" y1="0" y2="1">
-      <stop offset="0" stop-color="#1fd68f" stop-opacity="0.28"/>
+      <stop offset="0" stop-color="#1fd68f" stop-opacity="0.30"/>
       <stop offset="1" stop-color="#1fd68f" stop-opacity="0"/>
     </linearGradient>
     <linearGradient id="coneGrad" x1="0" x2="1" y1="0" y2="0">
       <stop offset="0" stop-color="#9be564" stop-opacity="0.85"/>
       <stop offset="1" stop-color="#a6f4d0" stop-opacity="0.10"/>
     </linearGradient>
+    <linearGradient id="standGrad" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#1f2630"/>
+      <stop offset="1" stop-color="#0e1217"/>
+    </linearGradient>
+    <clipPath id="ballClip">
+      <circle cx="270" cy="178" r="134"/>
+    </clipPath>
+    <filter id="mist" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="16"/>
+    </filter>
   </defs>
 
-  <g class="cone-grid">
-    <line x1="20" y1="70" x2="520" y2="70"/>
-    <line x1="20" y1="140" x2="520" y2="140"/>
-    <line x1="20" y1="210" x2="520" y2="210"/>
-    <line x1="20" y1="280" x2="520" y2="280"/>
+  <circle class="ball-glow" cx="270" cy="178" r="200" fill="url(#ballGlow)"/>
+
+  <!-- The stand. -->
+  <ellipse cx="270" cy="384" rx="118" ry="9" fill="#000" opacity="0.55"/>
+  <path d="M176 380 L204 330 L336 330 L364 380 Z" fill="url(#standGrad)" stroke="#1f2630" stroke-width="1.5"/>
+  <path d="M204 330 L336 330" stroke="#1fd68f" stroke-opacity="0.5" stroke-width="1.5"/>
+  <ellipse cx="270" cy="314" rx="78" ry="16" fill="url(#standGrad)" stroke="#1fd68f" stroke-opacity="0.45" stroke-width="1.5"/>
+
+  <!-- The ball, with the chart inside it. -->
+  <circle cx="270" cy="178" r="136" fill="url(#ballFill)"/>
+  <g clip-path="url(#ballClip)">
+    <g class="ball-swirl" filter="url(#mist)">
+      <ellipse cx="225" cy="150" rx="90" ry="34" fill="#1fd68f" opacity="0.22"/>
+      <ellipse cx="315" cy="215" rx="80" ry="28" fill="#9be564" opacity="0.16"/>
+      <ellipse cx="280" cy="105" rx="50" ry="18" fill="#a6f4d0" opacity="0.12"/>
+    </g>
+
+    <g class="cone-grid">
+      <line x1="120" y1="118" x2="420" y2="118"/>
+      <line x1="120" y1="178" x2="420" y2="178"/>
+      <line x1="120" y1="238" x2="420" y2="238"/>
+    </g>
+
+    <path class="cone-area" fill="url(#areaGrad)"
+          d="M136 250 L152 240 L168 246 L184 226 L200 233 L216 212 L232 220 L248 200 L262 206 L276 186 L276 320 L136 320 Z"/>
+    <path class="cone-line" fill="none" stroke="url(#lineGrad)" stroke-width="4"
+          stroke-linecap="round" stroke-linejoin="round" pathLength="1"
+          d="M136 250 L152 240 L168 246 L184 226 L200 233 L216 212 L232 220 L248 200 L262 206 L276 186"/>
+
+    <g class="cone-fan">
+      <polygon fill="url(#coneGrad)" opacity="0.55" points="276,186 410,112 410,262"/>
+      <polygon fill="url(#coneGrad)" points="276,186 410,146 410,222"/>
+      <line class="cone-mid" x1="276" y1="186" x2="410" y2="181"/>
+    </g>
+
+    <line class="cone-now" x1="276" y1="70" x2="276" y2="312"/>
   </g>
+  <circle class="cone-pulse" cx="276" cy="186" r="6"/>
+  <circle class="cone-dot" cx="276" cy="186" r="4.5"/>
 
-  <path class="cone-area" fill="url(#areaGrad)"
-        d="M20 262 L48 248 L76 256 L104 228 L132 238 L160 206 L188 220 L216 190 L244 202 L272 172 L300 182 L320 158 L320 330 L20 330 Z"/>
-  <path class="cone-line" fill="none" stroke="url(#lineGrad)" stroke-width="4"
-        stroke-linecap="round" stroke-linejoin="round" pathLength="1"
-        d="M20 262 L48 248 L76 256 L104 228 L132 238 L160 206 L188 220 L216 190 L244 202 L272 172 L300 182 L320 158"/>
+  <!-- Glass: rim and highlights. -->
+  <circle cx="270" cy="178" r="136" fill="none" stroke="url(#rimGrad)" stroke-width="2.5"/>
+  <ellipse cx="212" cy="104" rx="52" ry="24" fill="#ffffff" opacity="0.08" transform="rotate(-32 212 104)"/>
+  <ellipse cx="196" cy="96" rx="13" ry="7" fill="#ffffff" opacity="0.38" transform="rotate(-32 196 96)"/>
 
-  <g class="cone-fan">
-    <polygon fill="url(#coneGrad)" opacity="0.55" points="320,158 520,52 520,258"/>
-    <polygon fill="url(#coneGrad)" points="320,158 520,104 520,206"/>
-    <line class="cone-mid" x1="320" y1="158" x2="520" y2="150"/>
-  </g>
-
-  <line class="cone-now" x1="320" y1="36" x2="320" y2="330"/>
-  <circle class="cone-pulse" cx="320" cy="158" r="7"/>
-  <circle class="cone-dot" cx="320" cy="158" r="5"/>
-
-  <text class="cone-label" x="170" y="352" text-anchor="middle">WHAT HAPPENED</text>
-  <text class="cone-label accent" x="320" y="26" text-anchor="middle">TODAY</text>
-  <text class="cone-label" x="420" y="352" text-anchor="middle">WHAT MIGHT</text>
+  <text class="cone-label accent" x="276" y="62" text-anchor="middle">TODAY</text>
 </svg>
 <p class="art-note">Illustration, not data.</p>
 ```
@@ -84,10 +130,10 @@ answer, including when the answer is "it didn't work".
 ::: {.card-grid}
 
 ::: {.lab-card .featured}
-`<i class="bi bi-graph-up-arrow card-icon"></i>`{=html}
+`<span class="card-icon"><svg class="ball-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="9.6" r="7" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M8.4 7.6a3.8 3.8 0 0 1 2.6-1.9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M14.6 9.2l.5 1.2 1.2.5-1.2.5-.5 1.2-.5-1.2-1.2-.5 1.2-.5z" fill="currentColor"/><path d="M8.6 17.2h6.8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M7.6 18.6h8.8l2.4 3H5.2z" fill="currentColor"/></svg></span>`{=html}
 [Live]{.tag .live}
 
-### [NVIDIA predictor [→]{.arrow}](experiments/nvidia.qmd){.card-link}
+### [NVIDIA [→]{.arrow}](experiments/nvidia.qmd){.card-link}
 
 Can machine learning beat naive baselines at predicting whether NVDA closes up or
 down the next day? Tested on two decades of history, then scored daily on calls it
