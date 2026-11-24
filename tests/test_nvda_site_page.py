@@ -220,6 +220,36 @@ class TestTomorrow:
         assert "Calls for Tuesday 2 January 2029" in text_of(fragment)
         assert "data-certain" not in fragment
 
+    def test_models_and_baselines_are_two_labelled_groups_models_first(self) -> None:
+        fragment = tomorrow_fragment(log_records())
+        labels = re.findall(r'<p class="call-group-label">([^<]*)', fragment)
+        assert labels == ["Models", "Baselines"]
+        models, baselines = fragment.split('<p class="call-group-label">')[1:]
+        assert "Logistic regression" in models and "Always up" not in models
+        assert "Always up" in baselines and "Logistic regression" not in baselines
+        assert "the bar to beat" in text_of(baselines)
+
+    def test_a_group_with_no_members_is_left_out(self) -> None:
+        fragment = tomorrow_fragment([call(MON, "logistic", True, 0.6)])
+        assert re.findall(r'<p class="call-group-label">([^<]*)', fragment) == ["Models"]
+
+    def test_the_label_sits_beside_the_heading_in_every_state(self) -> None:
+        # My condition (2026-11-24): the "experiment, not advice" label stays
+        # directly beside the calls.
+        for records in (log_records(), [*log_records(), went(TUE, MON, True)]):
+            fragment = tomorrow_fragment(records)
+            assert re.search(
+                r'<div class="call-head"><p class="call-heading">Calls for .*?</p>'
+                r'<span class="tag advice-tag">Experiment · not advice</span></div>',
+                fragment,
+            )
+            assert fragment.index("advice-tag") < fragment.index("call-grid")
+
+    def test_columns_divide_the_cards_evenly_where_they_can(self) -> None:
+        assert [site_page.grid_columns(n) for n in range(1, 10)] == [1, 2, 3, 4, 3, 3, 3, 4, 3]
+        fragment = tomorrow_fragment(log_records())
+        assert '<div class="call-grid" style="--cols: 1">' in fragment
+
     def test_down_calls_are_shown_as_down(self) -> None:
         text = text_of(tomorrow_fragment(log_records()[:2]))
         assert "▼ Down" in text
@@ -245,37 +275,39 @@ class TestStatusStrip:
         assert "Experiment · not advice" in text
         assert "start after the first nightly run" in text
 
-    def test_shows_each_models_latest_call_with_arrow_word_and_probability(self) -> None:
+    def test_states_the_next_session_the_model_calls_and_sessions_scored(self) -> None:
         fragment = status_fragment(log_records())
         text = text_of(fragment)
-        assert "Calls for Tue 19 Mar 2030" in text
+        assert re.search(r"Next\s+Tue 19 Mar\s+1 model call\s+2 sessions scored", text)
         assert '<time class="session-date" datetime="2030-03-19">' in fragment
-        assert re.search(r"Logistic regression\s+▲ Up\s+53%", text)
-        assert '<span class="up">▲ Up</span>' in fragment
+
+    def test_counts_models_only(self) -> None:
+        records = [
+            call(MON, "always_up", True),
+            call(MON, "logistic", True, 0.6),
+            call(MON, "xgboost", False, 0.4),
+        ]
+        assert "2 model calls" in text_of(status_fragment(records))
 
     def test_once_scored_it_shows_the_session_from_the_log(self) -> None:
         text = text_of(status_fragment([*log_records(), went(TUE, MON, True)]))
-        assert "Calls for Tue 19 Mar 2030" in text
+        assert re.search(r"Last\s+Tue 19 Mar\s+1 model call\s+3 sessions scored", text)
 
     def test_a_certain_date_is_marked_for_today_or_tomorrow(self) -> None:
         fragment = status_fragment([call(date(2026, 11, 23), "logistic", True, 0.6)])
         assert (
-            '<time class="session-date" datetime="2026-11-24" data-certain="true">'
-            "Tue 24 Nov 2026</time>"
+            '<time class="session-date" datetime="2026-11-24" data-certain="true">Tue 24 Nov</time>'
         ) in fragment
 
-    def test_a_down_call_carries_the_arrow_and_the_word(self) -> None:
-        fragment = status_fragment(log_records()[:2])
-        assert '<span class="down">▼ Down</span>' in fragment
-        assert re.search(r"Logistic regression\s+▼ Down\s+47%", text_of(fragment))
-
-    def test_baselines_are_left_out(self) -> None:
-        assert "Always up" not in text_of(status_fragment(log_records()))
-
-    def test_it_reports_the_live_record_once_calls_are_scored(self) -> None:
-        text = text_of(status_fragment(log_records()))
-        assert re.search(r"Logistic regression\s+▲ Up\s+53% · 1 of 2 right", text)
-        assert re.search(r"Sessions scored\s+2", text)
+    def test_it_never_says_which_way_the_calls_went(self) -> None:
+        # My condition (2026-11-24): no up/down tally in the strip until the
+        # stance panel is designed. Direction stays in the calls band.
+        for records in (log_records(), log_records()[:2], [*log_records(), went(TUE, MON, True)]):
+            fragment = status_fragment(records)
+            assert "▲" not in fragment and "▼" not in fragment
+            assert not re.search(r"\b(up|down)\b", text_of(fragment).lower())
+            assert not re.search(r'class="[^"]*\b(up|down)\b', fragment)
+            assert "%" not in text_of(fragment)
 
     def test_it_is_always_labelled_an_experiment_and_never_reads_as_a_signal(self) -> None:
         for records in (
@@ -411,6 +443,21 @@ class TestTrackRecord:
         lines = chart_lines(figure)
         assert lines["XGBoost + context"][1] == "solid"
         assert lines["XGBoost + context"][0] != lines["Logistic regression"][0]
+
+    def test_the_chart_is_labelled_by_day_not_by_hour(self) -> None:
+        figure = site_page.cumulative_figure(cumulative_scores(scored_predictions(log_records())))
+        axis = figure.to_dict()["layout"]["xaxis"]
+        assert axis["type"] == "date"
+        assert axis["tickformat"] == "%-d %b" and "%H" not in axis["hoverformat"]
+        assert axis["rangebreaks"] == [{"bounds": ["sat", "mon"]}]
+        assert axis["dtick"] == site_page.DAY_MS  # a short span: one tick a day
+
+    def test_a_long_record_lets_the_chart_choose_its_ticks(self) -> None:
+        start = date(2030, 1, 1)
+        long = {"logistic": ([start, date(2030, 6, 1)], [1, 2])}
+        axis = site_page.cumulative_figure(long).to_dict()["layout"]["xaxis"]
+        assert "dtick" not in axis
+        assert axis["tickformat"] == "%-d %b"
 
     def test_fragment_states_the_numbers_and_the_sample_size_warning(self) -> None:
         text = text_of(track_record_fragment(log_records()))
@@ -704,6 +751,19 @@ class TestRangeFragment:
         assert "It says nothing about which way." in text
         assert "Not scored yet." in text
         assert "Written before that session opened. An experiment, not advice." in text
+
+    def test_the_label_sits_beside_the_range_heading_in_every_state(
+        self, volatility: dict[str, Any]
+    ) -> None:
+        scored_only = range_records()[: 2 * len(FORECASTERS) + 1]
+        for records in (range_records(), scored_only):
+            fragment = site_page.range_fragment(records, volatility)
+            assert re.search(
+                r'<div class="call-head"><p class="call-heading">Ranges for .*?</p>'
+                r'<span class="tag advice-tag">Experiment · not advice</span></div>',
+                fragment,
+            )
+            assert fragment.index("advice-tag") < fragment.index('class="range-panel"')
 
     def test_the_finding_sits_between_the_headline_and_the_table(
         self, volatility: dict[str, Any]

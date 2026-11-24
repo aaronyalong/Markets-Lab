@@ -292,3 +292,67 @@ def test_every_built_page_carries_the_disclaimer() -> None:
     assert built_pages
     for page in built_pages:
         assert "Not financial advice" in page.read_text(), f"{page.name} lacks the disclaimer"
+
+
+NVIDIA_PAGE = SITE / "experiments" / "nvidia.qmd"
+JUMP_LINK = re.compile(r'<a href="#([a-z0-9-]+)">([^<]+)</a>')
+
+
+def _heading_id(heading: str) -> str:
+    """The id Pandoc gives a heading (enough for the headings on this page)."""
+    return re.sub(r"[^a-z0-9 -]", "", heading.lower()).strip().replace(" ", "-")
+
+
+def test_the_calls_and_the_range_come_first_on_the_nvidia_page() -> None:
+    page = NVIDIA_PAGE.read_text()
+    order = [
+        "## Latest calls",
+        "## Latest range",
+        "## Track record",
+        "## NVIDIA headlines",
+        "## Live chart",
+        "## What two decades of history say",
+        "## Method",
+    ]
+    positions = [page.index(heading) for heading in order]
+    assert positions == sorted(positions)
+    # The status strip and the jump bar sit between the hero and the calls.
+    assert page.index("_generated/status.md") < page.index('class="jump-bar"')
+    assert page.index('class="jump-bar"') < page.index("## Latest calls")
+
+
+def test_every_jump_link_goes_to_a_section_of_the_page_in_order() -> None:
+    page = NVIDIA_PAGE.read_text()
+    nav = page[page.index('<nav class="jump-bar"') : page.index("</nav>")]
+    assert 'aria-label="On this page"' in nav
+    links = JUMP_LINK.findall(nav)
+    assert len(links) == 7
+    headings = [_heading_id(h) for h in re.findall(r"^## (.+?) \{", page, re.MULTILINE)]
+    targets = [target for target, _ in links]
+    assert all(target in headings for target in targets)
+    assert [headings.index(t) for t in targets] == sorted(headings.index(t) for t in targets)
+    # Plain links, so every one is reachable with the keyboard; nothing removes them
+    # from the tab order.
+    assert "tabindex" not in nav
+    assert "{{< include /_includes/jump-bar.md >}}" in page
+
+
+def test_the_jump_bar_stays_on_one_line_and_leaves_room_above_a_section() -> None:
+    theme = (SITE / "theme.scss").read_text()
+    bar = theme[theme.index(".jump-inner {") :]
+    bar = bar[: bar.index("\n}\n")]
+    assert "flex-wrap: nowrap;" in bar and "white-space: nowrap;" in bar
+    assert "scroll-margin-top: calc(var(--jump-bar-height" in theme
+    assert "&:focus-visible" in bar
+    script = (SITE / "_includes" / "jump-bar.md").read_text()
+    assert "prefers-reduced-motion: reduce" in script
+    assert "bar.offsetHeight + headerHeight()" in script
+    assert "heading.focus(" in script
+
+
+@pytest.mark.skipif(not BUILT.is_dir(), reason="site has not been rendered")
+def test_every_built_jump_link_has_its_target() -> None:
+    built = (BUILT / "experiments" / "nvidia.html").read_text()
+    nav = built[built.index('<nav class="jump-bar"') : built.index("</nav>")]
+    for target, _ in JUMP_LINK.findall(nav):
+        assert f'<section id="{target}"' in built

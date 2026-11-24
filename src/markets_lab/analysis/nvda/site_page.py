@@ -239,7 +239,11 @@ def _was(k: int) -> str:
 
 
 def tomorrow_fragment(records: Sequence[Record]) -> str:
-    """The latest call from each predictor, labelled as an experiment."""
+    """The latest call from each predictor, labelled as an experiment.
+
+    Models and baselines are shown as two labelled groups, models first. The
+    "experiment, not advice" label sits in the heading row, beside the calls.
+    """
     scored = scored_predictions(records)
     if scored.empty:
         return _raw(
@@ -262,40 +266,76 @@ def tomorrow_fragment(records: Sequence[Record]) -> str:
             "New calls appear after the next nightly run."
         )
 
-    cards = []
-    for name in ordered(list(calls.index)):
-        call = calls.loc[name]
-        up = bool(call["predicted_up"])
-        probability = call["probability_up"]
-        if pd.isna(probability):
-            detail = "A fixed rule: no probability."
-        else:
-            detail = f"Model's probability of up: {100 * float(probability):.0f}%"
-        result = ""
-        if not pending:
-            right = bool(call["correct"])
-            label = "Right" if right else "Wrong"
-            result = f'<span class="call-result {label.lower()}">{label}</span>'
-        cards.append(
-            f'<div class="call-card {kind_of(name)}">'
-            f'<span class="tag">{kind_of(name)}</span>'
-            f"<h4>{html.escape(display_name(name))}</h4>"
-            f'<div class="call {_direction_class(up)}">{_direction_text(up)}</div>'
-            f'<p class="muted">{html.escape(detail)}</p>{result}'
-            "</div>"
-        )
+    names = ordered(list(calls.index))
+    groups = (
+        ("Models", "", [n for n in names if kind_of(n) == "model"]),
+        ("Baselines", "the bar to beat", [n for n in names if kind_of(n) == "baseline"]),
+    )
+    sections = [
+        _call_group(title, aside, [_call_card(name, calls.loc[name], pending) for name in members])
+        for title, aside, members in groups
+        if members
+    ]
     return _raw(
-        f'<p class="call-heading">{heading}</p>{sub}'
-        f'<div class="call-grid">{"".join(cards)}</div>'
+        f'<div class="call-head"><p class="call-heading">{heading}</p>{ADVICE_TAG}</div>{sub}'
+        f"{''.join(sections)}"
         f'<p class="muted small">{html.escape(note)} An experiment, not advice.</p>'
     )
 
 
-def status_fragment(records: Sequence[Record]) -> str:
-    """A one-line summary of the experiment: the models' latest calls and live record.
+ADVICE_TAG = '<span class="tag advice-tag">Experiment · not advice</span>'
+"""Placed beside the calls and the range wherever they appear."""
 
-    Everything in it is labelled as an experiment. It states what each model
-    called and how often it has been right, and nothing about what to do.
+
+def _call_card(name: str, call: pd.Series, pending: bool) -> str:
+    up = bool(call["predicted_up"])
+    probability = call["probability_up"]
+    if pd.isna(probability):
+        detail = "A fixed rule: no probability."
+    else:
+        detail = f"Model's probability of up: {100 * float(probability):.0f}%"
+    result = ""
+    if not pending:
+        label = "Right" if bool(call["correct"]) else "Wrong"
+        result = f'<span class="call-result {label.lower()}">{label}</span>'
+    return (
+        f'<div class="call-card {kind_of(name)}">'
+        f"<h4>{html.escape(display_name(name))}</h4>"
+        f'<div class="call {_direction_class(up)}">{_direction_text(up)}</div>'
+        f'<p class="muted">{html.escape(detail)}</p>{result}'
+        "</div>"
+    )
+
+
+def _call_group(title: str, aside: str, cards: list[str]) -> str:
+    """A labelled row of cards, with as many columns as divide the cards evenly."""
+    count = f" · {len(cards)}" + (f" · {aside}" if aside else "")
+    return (
+        '<div class="call-group">'
+        f'<p class="call-group-label">{html.escape(title)}'
+        f'<span class="muted">{html.escape(count)}</span></p>'
+        f'<div class="call-grid" style="--cols: {grid_columns(len(cards))}">{"".join(cards)}</div>'
+        "</div>"
+    )
+
+
+def grid_columns(count: int) -> int:
+    """Columns for a row of cards on a wide screen: one that divides the count
+    evenly if possible, so no card is left alone on the last row."""
+    if count <= 3:
+        return max(count, 1)
+    for columns in (3, 4, 2):
+        if count % columns == 0:
+            return columns
+    return 3
+
+
+def status_fragment(records: Sequence[Record]) -> str:
+    """One neutral line about the experiment: which session the latest calls are
+    for, how many model calls there are and how many sessions have been scored.
+
+    It says nothing about which way the calls went; that stays in the calls band,
+    next to its label.
     """
     label = '<span class="status-label">Experiment · not advice</span>'
     scored = scored_predictions(records)
@@ -307,35 +347,22 @@ def status_fragment(records: Sequence[Record]) -> str:
         return _status(label + body)
 
     latest = max(scored["based_on_session"])
-    calls = scored[scored["based_on_session"] == latest].set_index("model")
-    record = {row.name: row for row in track_record(scored)}
+    calls = scored[scored["based_on_session"] == latest]
     pending = bool(calls["correct"].isna().all())
-    when = (
-        _upcoming(latest, short=True)
-        if pending
-        else _session_time(calls["target_session"].iloc[0], short=True)
-    )
-    items = [f'<span class="status-item"><span class="status-key">Calls for</span>{when}</span>']
-    for name in ordered(list(calls.index)):
-        if kind_of(name) != "model":
-            continue
-        call = calls.loc[name]
-        up = bool(call["predicted_up"])
-        probability = call["probability_up"]
-        chance = "" if pd.isna(probability) else f" {100 * float(probability):.0f}%"
-        row = record.get(name)
-        hits = f" · {row.hits} of {row.scored} right" if row is not None and row.scored else ""
-        items.append(
-            '<span class="status-item">'
-            f'<span class="status-key">{html.escape(display_name(name))}</span>'
-            f'<span class="{_direction_class(up)}">{_direction_text(up)}</span>'
-            f"{chance}{hits}</span>"
-        )
-    sessions = max((row.scored for row in record.values()), default=0)
-    items.append(
-        '<span class="status-item"><span class="status-key">Sessions scored</span>'
-        f"{sessions}</span>"
-    )
+    if pending:
+        key = "Next"
+        upcoming = next_session(latest)
+        when = _session_time(upcoming.day, brief=True, certain=upcoming.certain)
+    else:
+        key = "Last"
+        when = _session_time(calls["target_session"].iloc[0], brief=True)
+    models = sum(1 for name in calls["model"] if kind_of(name) == "model")
+    sessions = max((row.scored for row in track_record(scored)), default=0)
+    items = [
+        f'<span class="status-item"><span class="status-key">{key}</span>{when}</span>',
+        f'<span class="status-item">{models} model call{"" if models == 1 else "s"}</span>',
+        f'<span class="status-item">{sessions} session{"" if sessions == 1 else "s"} scored</span>',
+    ]
     return _status(label + "".join(items))
 
 
@@ -656,7 +683,7 @@ def range_fragment(records: Sequence[Record], report: Mapping[str, Any]) -> str:
         f"<th>{level:.0%} range</th>{result_column}</tr></thead><tbody>{body}</tbody></table>"
     )
     return _raw(
-        f'<p class="call-heading">{heading}</p>{sub}'
+        f'<div class="call-head"><p class="call-heading">{heading}</p>{ADVICE_TAG}</div>{sub}'
         f"{headline}{finding}{table}"
         f'<p class="muted small">{html.escape(note)} An experiment, not advice.</p>'
     )
@@ -838,7 +865,23 @@ def cumulative_figure(series: Mapping[str, tuple[list[date], list[int]]]) -> go.
     figure.add_hline(y=0, line={"color": BORDER, "width": 1})
     _style(figure, height=380)
     figure.update_yaxes(title_text="Right calls minus wrong calls")
+    # Sessions are days: label them by date, never by hour, and leave out weekends.
+    # Over a short span Plotly would otherwise put a tick every few hours.
+    days = [day for sessions, _ in series.values() for day in sessions]
+    short_span = bool(days) and (max(days) - min(days)).days <= SHORT_SPAN_DAYS
+    figure.update_xaxes(
+        type="date",
+        tickformat="%-d %b",
+        hoverformat="%a %-d %b %Y",
+        rangebreaks=[{"bounds": ["sat", "mon"]}],
+        dtick=DAY_MS if short_span else None,
+    )
     return figure
+
+
+SHORT_SPAN_DAYS = 21
+"""Up to about three weeks of sessions, the chart gets one tick per day."""
+DAY_MS = 86_400_000
 
 
 def _twin(name: str) -> str | None:
@@ -974,14 +1017,14 @@ def _direction_text(up: bool) -> str:
     return "▲ Up" if up else "▼ Down"
 
 
-def _session_time(day: date, *, short: bool = False, certain: bool = False) -> str:
+def _session_time(day: date, *, brief: bool = False, certain: bool = False) -> str:
     """A session's date as a `<time>` element.
 
     Only a `certain` date carries `data-certain`, which lets the page's script
     (site/_includes/session-dates.html) add "today" or "tomorrow" in New York time.
     Every other date stays plain.
     """
-    text = _short_date(day) if short else _long_date(day)
+    text = _brief_date(day) if brief else _long_date(day)
     marker = ' data-certain="true"' if certain else ""
     return (
         f'<time class="session-date" datetime="{day.isoformat()}"{marker}>'
@@ -989,10 +1032,10 @@ def _session_time(day: date, *, short: bool = False, certain: bool = False) -> s
     )
 
 
-def _upcoming(latest: date, *, short: bool = False) -> str:
+def _upcoming(latest: date) -> str:
     """The session after `latest`, worked out from NYSE's holiday rules."""
     upcoming = next_session(latest)
-    return _session_time(upcoming.day, short=short, certain=upcoming.certain)
+    return _session_time(upcoming.day, certain=upcoming.certain)
 
 
 def _pending_note(latest: date, what: str) -> str:
@@ -1020,8 +1063,8 @@ def _stamp(moment: datetime) -> str:
     return f"{moment.day} {moment:%b %Y, %H:%M} UTC"
 
 
-def _short_date(day: date) -> str:
-    return f"{day:%a} {day.day} {day:%b %Y}"
+def _brief_date(day: date) -> str:
+    return f"{day:%a} {day.day} {day:%b}"
 
 
 def _signed(value: float) -> str:

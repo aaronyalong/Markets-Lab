@@ -679,10 +679,25 @@ a:hover {
 }
 
 // Latest calls
+// The heading row: the session's date, with the "experiment, not advice" label
+// right beside it.
+.call-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.9rem;
+  margin-bottom: 0.25rem;
+
+  .advice-tag {
+    color: $lab-text;
+    border-color: $lab-muted;
+  }
+}
+
 .call-heading {
   font-size: 1.15rem;
   font-weight: 500;
-  margin-bottom: 0.25rem;
+  margin: 0;
 }
 
 // "today" / "tomorrow", added by _includes/session-dates.html beside a certain date.
@@ -696,22 +711,43 @@ a:hover {
   margin-bottom: 1.1rem;
 }
 
+// Models, then baselines, each under its own label. The page builder sets --cols
+// to a number that divides the cards evenly; cards on a short last row still
+// grow to fill it, so none is left stranded.
+.call-group {
+  margin-bottom: 1.4rem;
+}
+
+.call-group-label {
+  font-family: $font-family-monospace;
+  font-size: 0.74rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: $lab-text;
+  margin-bottom: 0.6rem;
+}
+
 .call-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(13.5rem, 1fr));
+  --cols: 3;
+  display: flex;
+  flex-wrap: wrap;
   gap: 1rem;
-  margin-bottom: 1rem;
+
+  > .call-card {
+    flex: 1 1 calc((100% - (var(--cols) - 1) * 1rem) / var(--cols));
+    min-width: 12rem;
+  }
 }
 
 .call-card {
   position: relative;
-  padding: 1.2rem 1.25rem 1rem;
+  padding: 1.1rem 1.25rem 1rem;
   border-radius: 16px;
   border: 1px solid $lab-border;
   background: $lab-panel;
 
   h4 {
-    margin: 0.7rem 0 0.2rem;
+    margin: 0 4.5rem 0.2rem 0;
     font-size: 1.05rem;
   }
 
@@ -959,11 +995,14 @@ a:hover {
   margin: 0 auto;
   padding: 0.7rem 1.5rem;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 0.45rem 1.6rem;
+  gap: 1.6rem;
   font-size: 0.84rem;
   color: $lab-text;
+  white-space: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
 
   .status-label {
     padding: 0.15rem 0.6rem;
@@ -992,6 +1031,70 @@ a:hover {
     color: $lab-red;
     font-weight: 700;
   }
+}
+
+// The NVIDIA page's jump bar. It sticks under the site header (the script in
+// _includes/jump-bar.md moves it up when the header hides), stays on one line, and
+// every link is an ordinary link, so it is reachable with the keyboard.
+.jump-bar {
+  position: sticky;
+  top: 0;
+  z-index: 1020; // under the fixed header (1030)
+  background: rgba($lab-bg, 0.94);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid $lab-border;
+  transition: top 0.2s ease;
+}
+
+.jump-inner {
+  max-width: $wide;
+  margin: 0 auto;
+  padding: 0 1.1rem;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.2rem;
+  white-space: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+
+  a {
+    display: inline-block;
+    padding: 0.7rem 0.55rem;
+    font-family: $font-family-monospace;
+    font-size: 0.74rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: $lab-muted;
+    border-radius: 6px;
+
+    &:hover {
+      color: $lab-text;
+      text-decoration: none;
+    }
+
+    &:focus-visible {
+      color: $lab-text;
+      outline: 2px solid $lab-accent;
+      outline-offset: -4px;
+    }
+  }
+}
+
+// A visit straight to an address with #section (not a click on the bar, which
+// the script handles): Quarto leaves room for its header, so this adds room for
+// the bar (height set by the script) and the eyebrow line above the heading.
+.section-title {
+  scroll-margin-top: calc(var(--jump-bar-height, 3.75rem) + 2.6rem);
+}
+
+.section-title > h2:focus {
+  outline: none;
+}
+
+.section-title > h2:focus-visible {
+  outline: 2px solid $lab-accent;
+  outline-offset: 4px;
+  border-radius: 4px;
 }
 
 // Collected headlines: the title is the link, with publisher and time beneath.
@@ -1140,6 +1243,10 @@ table {
     transition: none !important;
   }
 
+  html {
+    scroll-behavior: auto !important;
+  }
+
   .cone .cone-line {
     stroke-dashoffset: 0;
   }
@@ -1156,6 +1263,69 @@ table {
 }
 
 // ----------------------------------------------------------------- small screens
+
+// Phones: each call is one compact line, name and probability on the left,
+// the call on the right. The group label already says model or baseline.
+@media (max-width: 35.98rem) {
+  .call-grid {
+    gap: 0.5rem;
+
+    > .call-card {
+      flex-basis: 100%;
+      min-width: 0;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      column-gap: 0.8rem;
+      align-items: center;
+      padding: 0.7rem 0.95rem;
+      border-radius: 12px;
+    }
+  }
+
+  .call-card {
+    h4 {
+      margin: 0;
+      font-size: 0.95rem;
+    }
+
+    p {
+      grid-column: 1;
+      margin: 0.1rem 0 0;
+      font-size: 0.8rem;
+    }
+
+    .call {
+      grid-column: 2;
+      grid-row: 1 / span 2;
+      font-size: 1.2rem;
+      text-align: right;
+    }
+
+    .call-result {
+      position: static;
+      grid-column: 2;
+      grid-row: 2;
+      justify-self: end;
+      margin-top: 0.25rem;
+    }
+
+    &:has(.call-result) .call {
+      grid-row: 1;
+    }
+  }
+
+  .jump-inner {
+    justify-content: space-between;
+    padding: 0 0.4rem;
+    gap: 0;
+
+    a {
+      padding: 0.65rem 0.3rem;
+      font-size: 0.66rem;
+      letter-spacing: 0.03em;
+    }
+  }
+}
 
 @media (max-width: 62rem) {
   .hero-inner {

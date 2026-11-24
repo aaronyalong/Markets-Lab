@@ -27,6 +27,66 @@ be followed.
 
 {{< include /_generated/status.md >}}
 
+```{=html}
+<nav class="jump-bar" aria-label="On this page">
+  <div class="jump-inner">
+    <a href="#latest-calls">Calls</a>
+    <a href="#latest-range">Range</a>
+    <a href="#track-record">Record</a>
+    <a href="#nvidia-headlines">News</a>
+    <a href="#live-chart">Chart</a>
+    <a href="#what-two-decades-of-history-say">History</a>
+    <a href="#method">Method</a>
+  </div>
+</nav>
+```
+
+{{< include /_includes/jump-bar.md >}}
+
+::::: {.band}
+
+[Which way]{.eyebrow}
+
+## Latest calls {.section-title}
+
+{{< include /_generated/tomorrow.md >}}
+
+:::::
+
+::::: {.band}
+
+[The size of the move]{.eyebrow}
+
+## Latest range {.section-title}
+
+A separate question from direction: how big is the next session's move likely to
+be? Each forecaster gives a range that is meant to hold the move four days out of
+five. The first one shown is the simple baseline the others are measured against.
+
+{{< include /_generated/range.md >}}
+
+:::::
+
+::::: {.band}
+
+[Live, since the log started]{.eyebrow}
+
+## Track record {.section-title}
+
+Every call is written to a log before the market opens and scored after it closes.
+The log can only be added to; see the [Method](../method.qmd) page for how that is
+enforced.
+
+{{< include /_generated/plotly.md >}}
+
+{{< include /_generated/track_record.md >}}
+
+### How the ranges have held up
+
+{{< include /_generated/range_record.md >}}
+
+:::::
+
 ::::: {.band}
 
 [In the news]{.eyebrow}
@@ -73,50 +133,6 @@ be followed.
 
 [The chart is provided by TradingView and shows their data. The models on this page
 do not use it; they work from daily closing data only.]{.muted .small}
-
-:::::
-
-::::: {.band}
-
-[The latest calls]{.eyebrow}
-
-## Latest calls {.section-title}
-
-{{< include /_generated/tomorrow.md >}}
-
-:::::
-
-::::: {.band}
-
-[The size of the move]{.eyebrow}
-
-## Latest range {.section-title}
-
-A separate question from direction: how big is the next session's move likely to
-be? Each forecaster gives a range that is meant to hold the move four days out of
-five. The first one shown is the simple baseline the others are measured against.
-
-{{< include /_generated/range.md >}}
-
-:::::
-
-::::: {.band}
-
-[Live, since the log started]{.eyebrow}
-
-## Track record {.section-title}
-
-Every call is written to a log before the market opens and scored after it closes.
-The log can only be added to; see the [Method](../method.qmd) page for how that is
-enforced.
-
-{{< include /_generated/plotly.md >}}
-
-{{< include /_generated/track_record.md >}}
-
-### How the ranges have held up
-
-{{< include /_generated/range_record.md >}}
 
 :::::
 
