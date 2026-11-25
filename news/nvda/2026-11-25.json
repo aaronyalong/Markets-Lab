@@ -1,0 +1,28 @@
+{
+  "collected_at": "2026-11-25T20:25:35Z",
+  "window_hours": 24,
+  "failed_sources": [],
+  "items": [
+    {
+      "source": "yahoo_finance",
+      "publisher": "Yahoo Finance",
+      "title": "Why Nvidia's 'Jensen put' failed to stop the AI trade meltdown",
+      "url": "https://finance.yahoo.com/markets/article/why-nvidias-jensen-put-did-little-to-ease-the-ai-trade-meltdown-185334279.html",
+      "published_at": "2026-11-25T18:53:34Z"
+    },
+    {
+      "source": "yahoo_finance",
+      "publisher": "Yahoo Finance Video",
+      "title": "Dan Ives: Nvidia sell-off a 'growth scare,' not a demand problem",
+      "url": "https://finance.yahoo.com/video/dan-ives-nvidia-sell-off-a-growth-scare-not-a-demand-problem-151140023.html",
+      "published_at": "2026-11-25T15:11:40Z"
+    },
+    {
+      "source": "yahoo_finance",
+      "publisher": "Yahoo Finance Video",
+      "title": "5 reasons Nvidia stock is stumbling",
+      "url": "https://finance.yahoo.com/video/5-reasons-nvidia-stock-is-stumbling-145638309.html",
+      "published_at": "2026-11-25T14:56:38Z"
+    }
+  ]
+}
