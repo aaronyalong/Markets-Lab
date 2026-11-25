@@ -396,3 +396,29 @@ def test_every_built_jump_link_has_its_target() -> None:
     nav = built[built.index('<nav class="jump-bar"') : built.index("</nav>")]
     for target, _ in JUMP_LINK.findall(nav):
         assert f'<section id="{target}"' in built
+
+
+def test_the_nvidia_page_never_says_predictor_and_has_a_quiet_title() -> None:
+    # My request (2026-11-24): no "predictor" on the page, "NVIDIA" in a much
+    # softer version of the accent, and no "Experiment · live" bubble above it.
+    page = NVIDIA_PAGE.read_text()
+    assert "predictor" not in page.lower()
+    assert "\n# [NVIDIA]{.grad-soft}\n" in page
+    assert ".tag .live" not in page
+    # It still says it is an experiment, right under the title.
+    hero = page[page.index("{.page-hero}") : page.index("_generated/status.md")]
+    assert "**An experiment, not advice.**" in hero
+    menu = CONFIG.read_text().split("menu:", 1)[1].split("- href: method.qmd", 1)[0]
+    assert "text: NVIDIA\n" in menu
+    theme = (SITE / "theme.scss").read_text()
+    soft = theme[theme.index(".grad-soft {") :].split("}", 1)[0]
+    # Only palette colours that pass the contrast test, light at both ends.
+    assert "linear-gradient(100deg, $lab-text 0%, $lab-text 35%, $lab-mint 100%)" in soft
+
+
+@pytest.mark.skipif(not BUILT.is_dir(), reason="site has not been rendered")
+def test_the_built_nvidia_page_never_shows_the_word_predictor() -> None:
+    built = (BUILT / "experiments" / "nvidia.html").read_text()
+    visible = re.sub(r"<script.*?</script>", " ", built, flags=re.DOTALL)
+    visible = re.sub(r"<[^>]+>", " ", visible)
+    assert "predictor" not in visible.lower()

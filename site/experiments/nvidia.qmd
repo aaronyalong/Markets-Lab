@@ -1,5 +1,5 @@
 ---
-pagetitle: "NVIDIA predictor · Markets Lab"
+pagetitle: "NVIDIA · Markets Lab"
 page-layout: custom
 toc: false
 ---
@@ -9,9 +9,7 @@ toc: false
 :::::: {.page-hero}
 ::::: {.band}
 
-[Experiment · live]{.tag .live}
-
-# NVIDIA [predictor]{.grad}
+# [NVIDIA]{.grad-soft}
 
 Can machine learning beat naive baselines at predicting whether NVDA closes up or
 down the next day?
@@ -164,7 +162,7 @@ made using only the days before it.
 
 ### The question
 
-Each day after the close, every predictor makes one call: will the next session
+Each day after the close, every model and baseline makes one call: will the next session
 close higher than this one? "Higher" uses the closing price adjusted for dividends
 and splits, and a flat day counts as not up.
 

@@ -437,7 +437,7 @@ def track_record_fragment(records: Sequence[Record]) -> str:
         for row in rows
     )
     table = (
-        '<table class="lab-table"><thead><tr><th>Predictor</th><th>Type</th>'
+        '<table class="lab-table"><thead><tr><th>Model or baseline</th><th>Type</th>'
         "<th>Scored calls</th><th>Right</th><th>Accuracy</th><th>95% interval</th>"
         f"</tr></thead><tbody>{body}</tbody></table>"
     )
@@ -493,7 +493,7 @@ def backtest_fragment(report: Mapping[str, Any]) -> str:
             "</tr>"
         )
     table = (
-        '<table class="lab-table"><thead><tr><th>Predictor</th><th>Accuracy</th>'
+        '<table class="lab-table"><thead><tr><th>Model or baseline</th><th>Accuracy</th>'
         f"<th>Simulated return per year<br><span class='muted small'>after {cost} basis "
         "points per trade</span></th><th>Return vs buy-and-hold</th></tr></thead>"
         f"<tbody>{''.join(rows)}</tbody></table>"

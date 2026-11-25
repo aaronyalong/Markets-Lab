@@ -28,7 +28,7 @@ website:
       - text: Experiments
         menu:
           - href: experiments/nvidia.qmd
-            text: NVIDIA predictor
+            text: NVIDIA
       - href: method.qmd
         text: Method
       - href: disclaimer.qmd

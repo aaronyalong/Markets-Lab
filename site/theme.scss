@@ -194,6 +194,16 @@ a:hover {
   color: transparent;
 }
 
+// A much quieter version for a page title: mostly the page's own text colour,
+// easing into pale mint at the end. Both ends are palette colours that pass the
+// contrast test, and so does every blend between them.
+.grad-soft {
+  background: linear-gradient(100deg, $lab-text 0%, $lab-text 35%, $lab-mint 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
 .muted {
   color: $lab-muted;
 }
