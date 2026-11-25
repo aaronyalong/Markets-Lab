@@ -5,11 +5,18 @@ name: Nightly NVDA prediction
 #
 # Timing: predictions must be written before the US market opens (09:30 New York,
 # which is 13:30 or 14:30 UTC). Yahoo can take hours after the close to publish the
-# final bar (seen once: between 21:00 and 21:28 New York), so the job runs four
-# times from late evening to the morning. Every run after the first successful one
-# is a retry and adds nothing. GitHub may start scheduled jobs many hours late (seen
-# 2026-11-19: both of that day's runs started about 8.5 hours late, after the open),
-# so the two evening times are early enough to absorb a delay of that size.
+# final bar (seen once: between 21:00 and 21:28 New York), and the context models
+# wait for a fixed 20:00 New York cut-off. Every run after the first successful one
+# is a retry and adds nothing.
+#
+# GitHub starts scheduled jobs late, by a varying and growing amount: 7 to 8.5
+# hours on 2026-11-19 to 22, 9.9 to 12.1 hours on 2026-11-23 and 24. With the
+# four morning times alone, a delay of 10 to 12.5 hours put no run between the
+# 20:00 cut-off and the open. So the job runs eight times a day, never more than
+# 6.5 hours apart. The window is 13.5 hours long, so whatever the delay (up to a
+# whole day), at least two runs start inside it: one to make the calls and one
+# retry. A test checks this against the log's own window and cut-off, in winter
+# and summer time. Runs that start during the session find nothing to do.
 #
 # The context models need two more downloads (index closes from Yahoo, filing times
 # from SEC). If those fail, the other predictors' calls are still written and
@@ -19,6 +26,12 @@ name: Nightly NVDA prediction
 
 on:
   schedule:
+    # New York times: winter, then summer. Minutes avoid the top of the hour,
+    # when GitHub's scheduler is busiest.
+    - cron: "45 18 * * *" # 13:45 or 14:45 New York, during the session (for a late start)
+    - cron: "45 20 * * *" # 15:45 or 16:45 New York
+    - cron: "45 22 * * *" # 17:45 or 18:45 New York
+    - cron: "15 0 * * *" # 19:15 or 20:15 New York
     - cron: "30 3 * * *" # 22:30 or 23:30 New York, the evening of the session
     - cron: "30 6 * * *" # 01:30 or 02:30 New York
     - cron: "30 10 * * *" # 05:30 or 06:30 New York

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +19,10 @@ from markets_lab.analysis.nvda.backtest import (
     MODEL_FACTORIES,
     PredictorFactory,
 )
-from markets_lab.analysis.nvda.context_features import EXTENDED_FEATURE_COLUMNS
+from markets_lab.analysis.nvda.context_features import (
+    EXTENDED_FEATURE_COLUMNS,
+    information_cutoff,
+)
 from markets_lab.analysis.nvda.features import build_dataset
 from markets_lab.analysis.nvda.models.context import LogisticContextModel
 from markets_lab.analysis.nvda.nightly import (
@@ -38,6 +42,7 @@ from markets_lab.analysis.nvda.prediction_log import (
     RangeOutcome,
     append_records,
     parse_log,
+    prediction_window,
     read_log,
     scored_predictions,
     scored_ranges,
@@ -903,13 +908,34 @@ class TestWorkflowFile:
         assert "LOG: predictions/nvda.jsonl" in text
         assert "--force" not in text
 
-    def test_runs_before_the_market_opens_and_has_a_clear_bot_message(self) -> None:
+    def test_two_runs_land_in_the_window_whatever_githubs_delay(self) -> None:
+        # GitHub started scheduled runs 7 to 12 hours late (2026-11-19 to 24), and
+        # the delay varies. For any delay up to a whole day, in winter and summer
+        # time, at least two runs (a call and a retry) must start after the 20:00
+        # cut-off the context models wait for and before the next open.
         text = WORKFLOW.read_text()
-        # Two evening times absorb a start many hours late; see the workflow's notes.
-        assert 'cron: "30 3 * * *"' in text
-        assert 'cron: "30 6 * * *"' in text
-        assert 'cron: "30 10 * * *"' in text
-        assert 'cron: "15 12 * * *"' in text
+        slots = [
+            time(int(hour), int(minute))
+            for minute, hour in re.findall(r'cron: "(\d+) (\d+) \* \* \*"', text)
+        ]
+        assert len(slots) == text.count("cron:") == 8
+        sessions = [date(2026, 1, 12) + timedelta(days=i) for i in range(5)]
+        sessions += [date(2026, 7, 13) + timedelta(days=i) for i in range(5)]
+        for session in sessions:
+            earliest = information_cutoff(session)
+            _, deadline = prediction_window(session)
+            for quarter_hours in range(24 * 4 + 1):
+                delay = timedelta(minutes=15 * quarter_hours)
+                starts = [
+                    datetime.combine(session + timedelta(days=shift), slot, tzinfo=UTC) + delay
+                    for shift in (-1, 0, 1)
+                    for slot in slots
+                ]
+                inside = [start for start in starts if earliest <= start < deadline]
+                assert len(inside) >= 2, (session, delay)
+
+    def test_has_a_clear_bot_message(self) -> None:
+        text = WORKFLOW.read_text()
         assert 'git commit -m "bot: append NVDA outcomes and predictions' in text
         assert "continue-on-error" not in text
 
