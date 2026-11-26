@@ -48,7 +48,12 @@ down the next day?
   result was seen; the volatility gate was chosen knowing volatility is
   predictable. It is an experiment, not a signal to follow.
   `uv run python -m markets_lab.analysis.nvda.paper_strategy.backtest` writes
-  `reports/nvda_paper_strategy.json` (aggregates only).
+  `reports/nvda_paper_strategy.json` (aggregates only). Live, the nightly job logs
+  its state for the next session once all six models have called, with the two
+  things the rule looked at (how many said up, and whether the gate was open); the
+  log checks each entry against the six calls on record. A night when any of the
+  six made no call has no entry and is never filled in; that session is counted as
+  missed and left out of both the strategy and the buy-and-hold comparison.
 - "No model beats buy-and-hold" is a valid outcome and will be reported as such.
 
 ### NVIDIA headlines

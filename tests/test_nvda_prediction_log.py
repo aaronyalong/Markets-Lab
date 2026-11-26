@@ -8,12 +8,15 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
 import pytest
 
+from markets_lab.analysis.nvda.paper_strategy.rule import RULE_MODELS
 from markets_lab.analysis.nvda.prediction_log import (
     GENESIS_HASH,
     LogError,
     Outcome,
+    PaperStrategyEntry,
     Prediction,
     RangeForecast,
     RangeOutcome,
@@ -25,6 +28,7 @@ from markets_lab.analysis.nvda.prediction_log import (
     prediction_window,
     range_position,
     read_log,
+    scored_paper_strategy,
     scored_predictions,
     scored_ranges,
 )
@@ -398,7 +402,7 @@ class TestCommandLine:
         assert code == 0
         assert output == (
             "log is valid: 8 records (6 predictions, 2 outcomes, 0 range forecasts, "
-            "0 range outcomes)"
+            "0 range outcomes, 0 paper strategy entries)"
         )
 
     def test_valid_extension_of_a_previous_copy(self, log: Path, tmp_path: Path) -> None:
@@ -716,5 +720,200 @@ class TestRangeScoring:
         assert main(["verify", "--log", str(range_log)], report=lines.append) == 0
         assert lines == [
             "log is valid: 9 records (2 predictions, 1 outcomes, 4 range forecasts, "
-            "2 range outcomes)"
+            "2 range outcomes, 0 paper strategy entries)"
+        ]
+
+
+def six_calls(based_on: date = THU, *, up: int = 4, made: str | None = None) -> list[Record]:
+    """A call from each of the paper strategy's six models; the first `up` say up."""
+    return [
+        prediction(based_on, name, up=position < up, made=made)
+        for position, name in enumerate(RULE_MODELS)
+    ]
+
+
+def entry(
+    based_on: date = THU, *, up: int = 4, gate: bool = True, made: str | None = None
+) -> PaperStrategyEntry:
+    """The entry the rule gives for `up` models up and this gate."""
+    made_at = at(made) if made else at(f"{based_on} 18:00")
+    return PaperStrategyEntry(made_at, based_on, up >= 4 and gate, up, gate)
+
+
+class TestPaperStrategyRecords:
+    """The paper strategy's entry: Holding or In cash, and what the rule looked at."""
+
+    def test_round_trip(self, tmp_path: Path) -> None:
+        path = tmp_path / "log.jsonl"
+        records = [*six_calls(), entry()]
+        append_records(path, records)
+        assert read_log(path) == records
+
+    def test_the_line_holds_the_state_and_the_rules_two_inputs_only(self, tmp_path: Path) -> None:
+        path = tmp_path / "log.jsonl"
+        append_records(path, [*six_calls(up=5), entry(up=5)])
+        line = json.loads(lines_of(path)[-1])
+        assert line["type"] == "paper_strategy"
+        assert set(line) == {
+            "v",
+            "type",
+            "made_at",
+            "based_on_session",
+            "holding",
+            "models_up",
+            "gate_open",
+            "prev_hash",
+            "hash",
+        }
+        assert (line["holding"], line["models_up"], line["gate_open"]) == (True, 5, True)
+
+    @pytest.mark.parametrize(
+        ("up", "gate", "holding"),
+        [(6, True, True), (4, True, True), (3, True, False), (6, False, False), (0, False, False)],
+    )
+    def test_the_state_the_rule_gives_is_accepted(
+        self, tmp_path: Path, up: int, gate: bool, holding: bool
+    ) -> None:
+        record = entry(up=up, gate=gate)
+        assert record.holding is holding
+        append_records(tmp_path / "log.jsonl", [*six_calls(up=up), record])
+
+    @pytest.mark.parametrize(
+        ("holding", "up", "gate"),
+        [(True, 3, True), (True, 6, False), (False, 4, True), (False, 6, True)],
+    )
+    def test_a_state_the_rule_does_not_give_is_refused(
+        self, holding: bool, up: int, gate: bool
+    ) -> None:
+        with pytest.raises(LogError, match="does not follow the rule"):
+            PaperStrategyEntry(at(f"{THU} 18:00"), THU, holding, up, gate)
+
+    @pytest.mark.parametrize("bad", [-1, 7, 4.0, True, "4"])
+    def test_the_count_must_be_a_whole_number_from_zero_to_six(self, bad: Any) -> None:
+        with pytest.raises(LogError, match="models_up"):
+            PaperStrategyEntry(at(f"{THU} 18:00"), THU, False, bad, False)
+
+    @pytest.mark.parametrize("missing", RULE_MODELS)
+    def test_it_needs_a_call_from_every_one_of_the_six(self, tmp_path: Path, missing: str) -> None:
+        calls = [c for c in six_calls(up=6) if isinstance(c, Prediction) and c.model != missing]
+        path = tmp_path / "log.jsonl"
+        append_records(path, calls)
+        before = path.read_bytes()
+        with pytest.raises(LogError, match=f"none on record from {missing}"):
+            append_records(path, [entry(up=5)])
+        assert path.read_bytes() == before
+
+    def test_calls_from_other_predictors_do_not_stand_in(self, tmp_path: Path) -> None:
+        five = six_calls(up=6)[:5]
+        others = [prediction(THU, "always_up", probability=None), prediction(THU, "ma_200")]
+        with pytest.raises(LogError, match="none on record from lstm_ctx"):
+            append_records(tmp_path / "log.jsonl", [*five, *others, entry(up=5)])
+
+    def test_the_calls_must_be_for_the_same_session(self, tmp_path: Path) -> None:
+        records = [*six_calls(THU), outcome(FRI, THU, up=True), entry(FRI)]
+        with pytest.raises(LogError, match="none on record from logistic"):
+            append_records(tmp_path / "log.jsonl", records)
+
+    def test_the_calls_must_come_first(self, tmp_path: Path) -> None:
+        with pytest.raises(LogError, match="needs a call from every one of its models"):
+            append_records(tmp_path / "log.jsonl", [entry(), *six_calls()])
+
+    def test_the_count_must_match_the_calls_in_the_log(self, tmp_path: Path) -> None:
+        with pytest.raises(LogError, match=r"says 5 models called up .* but the log has 4"):
+            append_records(tmp_path / "log.jsonl", [*six_calls(up=4), entry(up=5)])
+
+    def test_one_entry_per_session(self, tmp_path: Path) -> None:
+        with pytest.raises(LogError, match="already has an entry based on 2030-03-14"):
+            append_records(tmp_path / "log.jsonl", [*six_calls(), entry(), entry()])
+
+    def test_not_before_its_session_has_closed(self, tmp_path: Path) -> None:
+        # Its six calls must come first and cannot be written before the close, so
+        # an entry stamped before the close is always out of order.
+        early = "2030-03-14 15:59"
+        with pytest.raises(LogError, match="before the record above it"):
+            append_records(
+                tmp_path / "log.jsonl", [*six_calls(made="2030-03-14 16:00"), entry(made=early)]
+            )
+
+    @pytest.mark.parametrize("late", ["2030-03-15 09:30", "2030-03-15 12:00", "2030-03-18 08:00"])
+    def test_not_after_the_next_session_could_have_opened(self, tmp_path: Path, late: str) -> None:
+        path = tmp_path / "log.jsonl"
+        append_records(path, six_calls())
+        before = path.read_bytes()
+        with pytest.raises(LogError, match="after the next session could have opened"):
+            append_records(path, [entry(made=late)])
+        assert path.read_bytes() == before
+
+    def test_just_before_the_open_is_still_in_time(self, tmp_path: Path) -> None:
+        append_records(tmp_path / "log.jsonl", [*six_calls(), entry(made="2030-03-15 09:29")])
+
+    def test_not_once_a_later_outcome_is_on_record(self, tmp_path: Path) -> None:
+        records = [*six_calls(THU), outcome(FRI, THU, up=True)]
+        path = tmp_path / "log.jsonl"
+        append_records(path, records)
+        with pytest.raises(LogError, match="outcome of a later session"):
+            append_records(path, [entry(THU, made="2030-03-15 17:31")])
+
+    def test_changing_the_state_afterwards_breaks_the_chain(self, tmp_path: Path) -> None:
+        path = tmp_path / "log.jsonl"
+        append_records(path, [*six_calls(up=3), entry(up=3)])
+        text = path.read_text()
+        assert '"holding":false' in text
+        path.write_text(text.replace('"holding":false', '"holding":true'))
+        with pytest.raises(LogError, match="line 7"):
+            read_log(path)
+
+    def test_a_session_without_an_entry_is_simply_absent(self, tmp_path: Path) -> None:
+        # Thursday has all six calls and an entry; Friday has five calls and none.
+        records: list[Record] = [
+            *six_calls(THU),
+            entry(THU),
+            outcome(FRI, THU, up=True),
+            *six_calls(FRI)[:5],
+            outcome(MON, FRI, up=False),
+            *six_calls(MON, up=2),
+            entry(MON, up=2),
+        ]
+        path = tmp_path / "log.jsonl"
+        append_records(path, records)
+        scored = scored_paper_strategy(read_log(path))
+        assert list(scored["based_on_session"]) == [THU, MON]
+
+
+class TestPaperStrategyScoring:
+    def week(self) -> list[Record]:
+        return [
+            *six_calls(THU, up=5),
+            entry(THU, up=5),
+            outcome(FRI, THU, up=True),
+            *six_calls(FRI, up=6),
+            entry(FRI, up=6, gate=False),
+        ]
+
+    def test_entries_are_paired_with_the_next_sessions_outcome(self) -> None:
+        scored = scored_paper_strategy(self.week())
+        first, second = scored.iloc[0], scored.iloc[1]
+        assert (first["based_on_session"], first["target_session"]) == (THU, FRI)
+        assert bool(first["holding"]) is True and bool(first["went_up"]) is True
+        assert (first["models_up"], bool(first["gate_open"])) == (5, True)
+        assert bool(second["holding"]) is False
+        assert pd.isna(second["target_session"]) and pd.isna(second["went_up"])
+
+    def test_the_other_scorers_ignore_paper_entries(self) -> None:
+        with_entries = scored_predictions(self.week())
+        without = scored_predictions(
+            [r for r in self.week() if not isinstance(r, PaperStrategyEntry)]
+        )
+        assert with_entries.equals(without)
+        assert scored_ranges(self.week()).empty
+        assert scored_paper_strategy(week()).empty
+
+    def test_the_verifier_counts_them(self, tmp_path: Path) -> None:
+        path = tmp_path / "log.jsonl"
+        append_records(path, self.week())
+        lines: list[str] = []
+        assert main(["verify", "--log", str(path)], report=lines.append) == 0
+        assert lines == [
+            "log is valid: 15 records (12 predictions, 1 outcomes, 0 range forecasts, "
+            "0 range outcomes, 2 paper strategy entries)"
         ]

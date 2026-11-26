@@ -12,6 +12,11 @@ Each run:
 5. For the size of the move: appends each volatility forecaster's range for the
    next session, and, for every range whose session has now finished, whether the
    return fell inside it, below it or above it.
+6. For the simulated paper strategy: once all six of its models have a call for
+   the latest session (in the log or made in this run), appends whether it is
+   "Holding" or "In cash" for the next session. If any of the six has no call,
+   nothing is written for it: that session has no entry, and it is never filled
+   in once the next session could have opened.
 
 The run refuses, loudly, to write any prediction when:
 
@@ -59,10 +64,18 @@ from markets_lab.analysis.nvda.backtest import (
 )
 from markets_lab.analysis.nvda.context_features import CallTooEarlyError, build_context_dataset
 from markets_lab.analysis.nvda.features import Dataset, build_dataset, compute_outcomes
+from markets_lab.analysis.nvda.paper_strategy.rule import (
+    MIN_MODELS_UP,
+    RULE_MODELS,
+    gate_open,
+    gate_threshold,
+    state_name,
+)
 from markets_lab.analysis.nvda.prediction_log import (
     DEFAULT_LOG_PATH,
     LogError,
     Outcome,
+    PaperStrategyEntry,
     Prediction,
     RangeForecast,
     RangeOutcome,
@@ -75,7 +88,7 @@ from markets_lab.analysis.nvda.prediction_log import (
 from markets_lab.analysis.nvda.predictors import PREDICTED_UP, PROBABILITY_UP
 from markets_lab.analysis.nvda.volatility import backtest as volatility_backtest
 from markets_lab.analysis.nvda.volatility.backtest import ForecasterFactory
-from markets_lab.analysis.nvda.volatility.dataset import build_volatility_dataset
+from markets_lab.analysis.nvda.volatility.dataset import EWMA_COLUMN, build_volatility_dataset
 from markets_lab.analysis.nvda.volatility.forecasters import LOWER, RANGE_LEVEL, UPPER
 from markets_lab.collectors import market_context, nvda_earnings
 from markets_lab.collectors.nvda_earnings import Getter
@@ -117,12 +130,23 @@ class NightlyResult:
     skip_reason: str | None = None
     range_outcomes: tuple[RangeOutcome, ...] = ()
     range_forecasts: tuple[RangeForecast, ...] = ()
+    paper_entries: tuple[PaperStrategyEntry, ...] = ()
+    paper_waiting_for: tuple[str, ...] = ()
+    """Rule models with no call for the latest session, so the paper strategy has
+    no entry in this run."""
 
     @property
     def records(self) -> list[Record]:
         """Everything to append, in the order the log's rules need: what happened
-        first, then the calls on what happens next."""
-        return [*self.outcomes, *self.range_outcomes, *self.predictions, *self.range_forecasts]
+        first, then the calls on what happens next, then the paper strategy's
+        entry, which must follow the calls it is built from."""
+        return [
+            *self.outcomes,
+            *self.range_outcomes,
+            *self.predictions,
+            *self.range_forecasts,
+            *self.paper_entries,
+        ]
 
 
 def default_factories() -> dict[str, PredictorFactory]:
@@ -178,10 +202,16 @@ def plan_records(
     context_missing = [name for name in context_factories if (name, last_session) not in already]
     ranged = {(r.model, r.based_on_session) for r in existing if isinstance(r, RangeForecast)}
     ranges_missing = [name for name in range_factories if (name, last_session) not in ranged]
+    # The paper strategy runs only where all six of its models do, and owes an
+    # entry for the latest session until it has one.
+    registered = {*factories, *context_factories}
+    paper_owed = all(name in registered for name in RULE_MODELS) and not any(
+        isinstance(r, PaperStrategyEntry) and r.based_on_session == last_session for r in existing
+    )
     predictions: list[Prediction] = []
     skipped: tuple[str, ...] = ()
     skip_reason: str | None = None
-    if missing or context_missing or ranges_missing:
+    if missing or context_missing or ranges_missing or paper_owed:
         # One deadline for every call, context or not: nothing is filled in once
         # the next session could have opened.
         _, deadline = prediction_window(last_session)
@@ -207,6 +237,17 @@ def plan_records(
             skip_reason = str(exc) if isinstance(exc, _EXPECTED) else f"{type(exc).__name__}: {exc}"
         else:
             predictions += context_calls
+    paper_entries: list[PaperStrategyEntry] = []
+    paper_waiting_for: tuple[str, ...] = ()
+    if paper_owed:
+        calls = {
+            r.model: r.predicted_up
+            for r in [*existing, *predictions]
+            if isinstance(r, Prediction) and r.based_on_session == last_session
+        }
+        paper_waiting_for = tuple(name for name in RULE_MODELS if name not in calls)
+        if not paper_waiting_for:
+            paper_entries.append(_paper_entry(prices, calls, last_session, now))
     return NightlyResult(
         last_session,
         tuple(outcomes),
@@ -215,6 +256,33 @@ def plan_records(
         skip_reason,
         tuple(range_outcomes),
         tuple(range_forecasts),
+        tuple(paper_entries),
+        paper_waiting_for,
+    )
+
+
+def _paper_entry(
+    prices: pd.DataFrame, calls: Mapping[str, bool], last_session: date, now: datetime
+) -> PaperStrategyEntry:
+    """The paper strategy's state for the session after the last one.
+
+    The gate compares the simple baseline's volatility forecast for that session
+    with its values on the sessions whose next return is known: the same rows the
+    models are fitted on, as in the backtest.
+    """
+    dataset = build_volatility_dataset(prices)
+    if dataset.latest()[0] != last_session:
+        raise NightlyError("the volatility dataset does not end on the latest session")
+    history = dataset.labelled().features[EWMA_COLUMN].to_numpy(dtype="float64")
+    forecast = float(dataset.features[EWMA_COLUMN].iloc[-1])
+    is_open = gate_open(forecast, gate_threshold(history))
+    models_up = sum(bool(calls[name]) for name in RULE_MODELS)
+    return PaperStrategyEntry(
+        made_at=now,
+        based_on_session=last_session,
+        holding=models_up >= MIN_MODELS_UP and is_open,
+        models_up=models_up,
+        gate_open=is_open,
     )
 
 
@@ -436,6 +504,12 @@ def describe(result: NightlyResult, *, dry_run: bool) -> list[str]:
             f"{forecast.upper_return:+.2%} ({forecast.level:.0%} range) for the session after "
             f"{forecast.based_on_session}"
         )
+    for entry in result.paper_entries:
+        lines.append(
+            f"{verb} paper strategy: {state_name(entry.holding)} for the session after "
+            f"{entry.based_on_session} ({entry.models_up} of {len(RULE_MODELS)} models up, "
+            f"gate {'open' if entry.gate_open else 'closed'})"
+        )
     if result.skipped:
         lines.append(
             f"NO CALL from {', '.join(result.skipped)} for the session after "
@@ -443,6 +517,11 @@ def describe(result: NightlyResult, *, dry_run: bool) -> list[str]:
         )
         lines.append(
             "a later run can still add these calls, but only before the next session opens"
+        )
+    if result.paper_waiting_for:
+        lines.append(
+            f"NO PAPER STRATEGY ENTRY for the session after {result.last_session}: no call "
+            f"from {', '.join(result.paper_waiting_for)}"
         )
     return lines
 

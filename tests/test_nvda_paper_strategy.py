@@ -36,7 +36,7 @@ THE SCORING
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -56,6 +56,12 @@ from markets_lab.analysis.nvda.metrics import (
     strategy_net_returns,
 )
 from markets_lab.analysis.nvda.paper_strategy import backtest as paper
+from markets_lab.analysis.nvda.paper_strategy.live import (
+    LiveRecord,
+    compared_sessions,
+    live_record,
+    missed_sessions,
+)
 from markets_lab.analysis.nvda.paper_strategy.rule import (
     GATE_FORECASTER,
     GATE_PERCENTILE,
@@ -68,6 +74,14 @@ from markets_lab.analysis.nvda.paper_strategy.rule import (
     holding,
     holding_series,
     state_name,
+)
+from markets_lab.analysis.nvda.prediction_log import (
+    Outcome,
+    PaperStrategyEntry,
+    Prediction,
+    Record,
+    append_records,
+    parse_log,
 )
 from markets_lab.analysis.nvda.validation import WalkForwardConfig, make_folds
 from markets_lab.analysis.nvda.volatility.dataset import compute_ewma_volatility
@@ -537,3 +551,106 @@ class TestCommandLine:
         )
         assert code == 2
         assert "price fetch" in lines[0]
+
+
+# ---------------------------------------------------------------- the live record
+
+WED, THU, FRI, MON, TUE = (
+    date(2030, 3, 13),
+    date(2030, 3, 14),
+    date(2030, 3, 15),
+    date(2030, 3, 18),
+    date(2030, 3, 19),
+)
+
+
+def calls(day: date, up: int, *, without: str | None = None) -> list[Record]:
+    return [
+        Prediction(at(f"{day} 20:30"), day, name, position < up, 0.5)
+        for position, name in enumerate(RULE_MODELS)
+        if name != without
+    ]
+
+
+def entered(day: date, up: int, *, gate: bool = True) -> PaperStrategyEntry:
+    return PaperStrategyEntry(at(f"{day} 20:30"), day, up >= MIN_MODELS_UP and gate, up, gate)
+
+
+def closed(day: date, previous: date, *, up: bool) -> Outcome:
+    return Outcome(at(f"{day} 17:30"), day, previous, up)
+
+
+def log_with_a_missed_session() -> list[Record]:
+    """Wednesday: calls only, before the strategy started. Thursday: Holding, and
+    Friday closed up. Friday night: one call missing, so no entry; Monday closed
+    up. Monday: In cash, and Tuesday closed down. Tuesday: Holding, not scored."""
+    return [
+        *calls(WED, 6),
+        closed(THU, WED, up=True),
+        *calls(THU, 5),
+        entered(THU, 5),
+        closed(FRI, THU, up=True),
+        *calls(FRI, 6, without="lstm_ctx"),
+        closed(MON, FRI, up=True),
+        *calls(MON, 2),
+        entered(MON, 2),
+        closed(TUE, MON, up=False),
+        *calls(TUE, 6),
+        entered(TUE, 6),
+    ]
+
+
+class TestLiveRecord:
+    def test_the_made_up_log_is_one_the_real_log_would_accept(self, tmp_path: Path) -> None:
+        path = tmp_path / "log.jsonl"
+        append_records(path, log_with_a_missed_session())
+        assert parse_log(path.read_text()) == log_with_a_missed_session()
+
+    def test_a_missed_session_is_left_out_of_both_sides(self) -> None:
+        records = log_with_a_missed_session()
+        compared = compared_sessions(records)
+        # Monday's session has no entry: it is in neither side of the comparison,
+        # although it closed up and buy-and-hold would have gained from it.
+        assert list(compared["target_session"]) == [FRI, TUE]
+        record = live_record(records)
+        assert record.sessions == 2
+        assert record.went_up == 1  # buy-and-hold's side: Friday only, not Monday
+        assert record.holding + record.in_cash == record.sessions
+
+    def test_the_missed_session_is_counted(self) -> None:
+        records = log_with_a_missed_session()
+        assert missed_sessions(records) == [MON]
+        assert live_record(records).missed == 1
+
+    def test_the_state_before_a_missed_session_is_not_carried_forward(self) -> None:
+        # The strategy was Holding going into the missed session. Had that state
+        # been carried forward, it would count two Holding sessions that closed up.
+        record = live_record(log_with_a_missed_session())
+        assert (record.holding, record.holding_went_up) == (1, 1)
+
+    def test_the_counts(self) -> None:
+        assert live_record(log_with_a_missed_session()) == LiveRecord(
+            sessions=2,
+            missed=1,
+            holding=1,
+            holding_went_up=1,
+            in_cash=1,
+            in_cash_not_up=1,
+            went_up=1,
+        )
+        assert live_record(log_with_a_missed_session()).right_side == 2
+
+    def test_sessions_before_the_first_entry_are_not_missed(self) -> None:
+        # Thursday's session finished before the strategy had made any entry.
+        assert THU not in missed_sessions(log_with_a_missed_session())
+
+    def test_an_entry_waiting_for_its_outcome_is_not_counted_yet(self) -> None:
+        records = log_with_a_missed_session()
+        assert isinstance(records[-1], PaperStrategyEntry) and records[-1].holding
+        assert live_record(records).holding == 1
+
+    def test_before_the_strategy_starts_everything_is_zero(self) -> None:
+        records = [*calls(WED, 6), closed(THU, WED, up=True)]
+        assert live_record(records) == LiveRecord(0, 0, 0, 0, 0, 0, 0)
+        assert live_record([]) == LiveRecord(0, 0, 0, 0, 0, 0, 0)
+        assert compared_sessions([]).empty and missed_sessions([]) == []

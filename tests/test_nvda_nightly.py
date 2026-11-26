@@ -13,6 +13,7 @@ import pandas as pd
 import pytest
 
 from context_frames import context_for, make_publications, sec_getter, yahoo_downloader
+from markets_lab.analysis.nvda import nightly as nightly_module
 from markets_lab.analysis.nvda.backtest import (
     BASELINE_FACTORIES,
     CONTEXT_MODEL_FACTORIES,
@@ -34,9 +35,12 @@ from markets_lab.analysis.nvda.nightly import (
     main,
     run_nightly,
 )
+from markets_lab.analysis.nvda.paper_strategy.live import live_record
+from markets_lab.analysis.nvda.paper_strategy.rule import GATE_PERCENTILE, RULE_MODELS
 from markets_lab.analysis.nvda.prediction_log import (
     LogError,
     Outcome,
+    PaperStrategyEntry,
     Prediction,
     RangeForecast,
     RangeOutcome,
@@ -854,6 +858,292 @@ class TestRanges:
         assert "appended range outcome: 2030-03-15 closed above ewma_94's range" in lines
 
 
+def says(up: bool) -> PredictorFactory:
+    """A stand-in model that always makes the same call."""
+
+    class Fixed:
+        name = "fixed"
+
+        def fit(self, features: pd.DataFrame, target_up: pd.Series) -> None:
+            pass
+
+        def predict(self, features: pd.DataFrame) -> pd.DataFrame:
+            rows = len(features)
+            return prediction_frame(
+                features.index, np.full(rows, up), np.full(rows, 0.6 if up else 0.4)
+            )
+
+    return Fixed
+
+
+def paper_run(
+    log: Path,
+    now: str,
+    *,
+    prices: pd.DataFrame | None = None,
+    up: int = 4,
+    downloader: Callable[[str], pd.DataFrame] | None = None,
+    get: Callable[[str], str] | None = None,
+    range_factories: dict[str, Any] | None = None,
+    dry_run: bool = False,
+) -> NightlyResult:
+    """A run with the baselines and stand-ins for the paper strategy's six models,
+    the first `up` of which say up."""
+    chosen = calm() if prices is None else prices
+    votes = {name: says(position < up) for position, name in enumerate(RULE_MODELS)}
+    return run_nightly(
+        now=at(now),
+        log_path=log,
+        downloader=downloader or yahoo_downloader(chosen),
+        get=get or sec_getter(),
+        factories={**BASELINE_FACTORIES, **{name: votes[name] for name in RULE_MODELS[:3]}},
+        context_factories={name: votes[name] for name in RULE_MODELS[3:]},
+        range_factories={} if range_factories is None else range_factories,
+        dry_run=dry_run,
+        min_rows=100,
+    )
+
+
+def calm() -> pd.DataFrame:
+    """Sessions through Thursday whose last 40 moves are small, so the gate is open."""
+    full = history()
+    prices = full.iloc[:-40]
+    for position, stamp in enumerate(full.index[-40:]):
+        prices = add_session(prices, stamp.date(), 0.002 if position % 2 else -0.001)
+    return prices
+
+
+def gate_is_open(prices: pd.DataFrame) -> bool:
+    """The gate for the session after the last one, worked out independently."""
+    ewma = build_volatility_dataset(prices).features["ewma_vol_94"].to_numpy()
+    return bool(ewma[-1] <= np.percentile(ewma[:-1], GATE_PERCENTILE))
+
+
+def jolted() -> pd.DataFrame:
+    """Sessions through Tuesday, the last three with very large moves."""
+    prices = history()
+    for session, change in ((FRI, 0.15), (MON, -0.15), (TUE, 0.15)):
+        prices = add_session(prices, session, change)
+    return prices
+
+
+def entries_in(log: Path) -> list[PaperStrategyEntry]:
+    return [r for r in read_log(log) if isinstance(r, PaperStrategyEntry)]
+
+
+CONTEXT_THREE = tuple(RULE_MODELS[3:])
+
+
+class TestPaperStrategy:
+    """Holding or In cash for the next session, once all six models have called."""
+
+    @pytest.mark.parametrize(("up", "holding"), [(6, True), (4, True), (3, False), (0, False)])
+    def test_the_entry_follows_the_six_calls_made_in_the_same_run(
+        self, log: Path, up: int, holding: bool
+    ) -> None:
+        assert gate_is_open(calm())
+        result = paper_run(log, EVENING, up=up)
+        assert result.paper_entries == (PaperStrategyEntry(at(EVENING), THU, holding, up, True),)
+        assert result.paper_waiting_for == ()
+        assert read_log(log)[-1] == result.paper_entries[0]
+
+    def test_a_closed_gate_means_cash_even_when_all_six_say_up(self, log: Path) -> None:
+        prices = jolted()
+        assert not gate_is_open(prices)
+        result = paper_run(log, "2030-03-19 22:30", prices=prices, up=6)
+        assert result.paper_entries == (
+            PaperStrategyEntry(at("2030-03-19 22:30"), TUE, False, 6, False),
+        )
+
+    def test_the_gate_looks_only_at_sessions_whose_next_return_is_known(
+        self, log: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        seen: list[np.ndarray] = []
+        real = nightly_module.gate_threshold
+
+        def watching(values: np.ndarray) -> float:
+            seen.append(np.array(values))
+            return real(values)
+
+        monkeypatch.setattr(nightly_module, "gate_threshold", watching)
+        prices = jolted()
+        paper_run(log, "2030-03-19 22:30", prices=prices)
+        ewma = build_volatility_dataset(prices).features["ewma_vol_94"].to_numpy()
+        assert len(seen) == 1
+        # Every session but the latest, whose next return has not happened yet.
+        assert np.array_equal(seen[0], ewma[:-1])
+
+    def test_a_partial_bar_for_today_never_reaches_the_gate(self, tmp_path: Path) -> None:
+        prices = calm()
+        partial = with_extra_row(prices, str(FRI), close=1.0, adj_close=1.0, low=0.5)
+        clean_log, dirty_log = tmp_path / "clean.jsonl", tmp_path / "dirty.jsonl"
+        paper_run(clean_log, EARLY_MORNING, prices=prices)
+        paper_run(
+            dirty_log,
+            EARLY_MORNING,
+            downloader=yahoo_downloader(partial, context_for(prices)),
+        )
+        assert len(entries_in(clean_log)) == 1
+        assert dirty_log.read_text() == clean_log.read_text()
+
+    def test_a_night_with_a_call_missing_writes_no_entry(self, log: Path) -> None:
+        result = paper_run(log, EVENING, **sec_download_fails(calm()))
+        # The baselines and the three technical models are written as usual.
+        assert [p.model for p in result.predictions] == [*BASELINE_FACTORIES, *RULE_MODELS[:3]]
+        assert result.skipped == CONTEXT_THREE
+        assert result.paper_entries == ()
+        assert result.paper_waiting_for == CONTEXT_THREE
+        assert entries_in(log) == []
+        assert not any('"paper_strategy"' in line for line in log.read_text().splitlines())
+
+    @pytest.mark.parametrize("failure", [index_download_fails, sec_download_fails])
+    def test_whatever_stopped_the_context_calls_stops_the_entry(
+        self, log: Path, failure: Callable[[pd.DataFrame], dict[str, Any]]
+    ) -> None:
+        result = paper_run(log, EVENING, **failure(calm()))
+        assert result.paper_entries == () and entries_in(log) == []
+
+    def test_before_the_cut_off_there_is_no_entry_yet(self, log: Path) -> None:
+        early = paper_run(log, "2030-03-14 18:00")
+        assert early.paper_entries == () and early.paper_waiting_for == CONTEXT_THREE
+        later = paper_run(log, "2030-03-14 20:00")
+        assert [p.model for p in later.predictions] == list(CONTEXT_THREE)
+        assert [e.made_at for e in later.paper_entries] == [at("2030-03-14 20:00")]
+
+    def test_a_missed_session_is_never_filled_in_afterwards(self, log: Path) -> None:
+        paper_run(log, EVENING, **sec_download_fails(calm()))
+        prices = add_session(calm(), FRI, +0.02)
+        friday = paper_run(log, "2030-03-15 22:30", prices=prices)
+        assert [o.session for o in friday.outcomes] == [FRI]
+        assert [e.based_on_session for e in friday.paper_entries] == [FRI]
+        prices = add_session(prices, MON, -0.01)
+        paper_run(log, "2030-03-18 22:30", prices=prices)
+        # Thursday's entry (for Friday's session) is missing for good.
+        assert [e.based_on_session for e in entries_in(log)] == [FRI, MON]
+        record = live_record(read_log(log))
+        assert (record.sessions, record.missed) == (1, 0)
+
+    def test_a_session_missed_after_the_first_entry_is_counted_as_missed(self, log: Path) -> None:
+        paper_run(log, EVENING)
+        prices = add_session(calm(), FRI, +0.02)
+        paper_run(log, "2030-03-15 22:30", prices=prices, **sec_download_fails(prices))
+        prices = add_session(prices, MON, +0.03)
+        paper_run(log, "2030-03-18 22:30", prices=prices)
+        prices = add_session(prices, TUE, -0.01)
+        paper_run(log, "2030-03-19 22:30", prices=prices)
+        # No entry was made on Friday night; Tuesday's is waiting for its outcome.
+        assert [e.based_on_session for e in entries_in(log)] == [THU, MON, TUE]
+        record = live_record(read_log(log))
+        # Friday's and Tuesday's sessions are compared; Monday's has no entry.
+        assert (record.sessions, record.missed) == (2, 1)
+        assert record.went_up == 1  # Friday up, Tuesday not; Monday's rise is left out
+
+    def test_a_retry_before_the_open_that_completes_the_six_writes_the_entry(
+        self, log: Path
+    ) -> None:
+        paper_run(log, EVENING, **sec_download_fails(calm()))
+        retry = paper_run(log, EARLY_MORNING)
+        assert [p.model for p in retry.predictions] == list(CONTEXT_THREE)
+        assert retry.paper_entries == (PaperStrategyEntry(at(EARLY_MORNING), THU, True, 4, True),)
+        assert retry.paper_waiting_for == ()
+
+    @pytest.mark.parametrize("when", ["2030-03-15 09:30", "2030-03-15 10:00", "2030-03-15 17:00"])
+    def test_an_entry_is_not_written_once_the_next_session_could_have_opened(
+        self, log: Path, when: str
+    ) -> None:
+        # All six calls are on record but the entry is not (as on the strategy's
+        # first day, or after an interrupted run).
+        paper_run(log, EVENING)
+        without_entry = "".join(log.read_text().splitlines(keepends=True)[:-1])
+        log.write_text(without_entry)
+        assert entries_in(log) == []
+        with pytest.raises(NightlyError, match="too late"):
+            paper_run(log, when)
+        assert log.read_text() == without_entry
+
+    def test_the_log_refuses_a_late_entry_even_if_the_job_tried(self, log: Path) -> None:
+        paper_run(log, EVENING)
+        without_entry = "".join(log.read_text().splitlines(keepends=True)[:-1])
+        log.write_text(without_entry)
+        late = PaperStrategyEntry(at("2030-03-15 10:00"), THU, True, 4, True)
+        with pytest.raises(LogError, match="after the next session could have opened"):
+            append_records(log, [late])
+        assert log.read_text() == without_entry
+
+    def test_with_the_calls_on_record_a_run_before_the_open_adds_just_the_entry(
+        self, log: Path
+    ) -> None:
+        paper_run(log, EVENING)
+        log.write_text("".join(log.read_text().splitlines(keepends=True)[:-1]))
+        result = paper_run(log, EARLY_MORNING)
+        assert result.predictions == ()
+        assert result.records == [PaperStrategyEntry(at(EARLY_MORNING), THU, True, 4, True)]
+
+    def test_running_again_adds_nothing(self, log: Path) -> None:
+        paper_run(log, EVENING)
+        before = log.read_bytes()
+        again = paper_run(log, EARLY_MORNING)
+        assert again.records == [] and log.read_bytes() == before
+
+    def test_the_entry_is_written_after_everything_it_depends_on(self, log: Path) -> None:
+        paper_run(log, EVENING, range_factories=default_range_factories())
+        prices = add_session(calm(), FRI, +0.01)
+        paper_run(log, "2030-03-15 22:30", prices=prices, range_factories=default_range_factories())
+        kinds = [type(r).__name__ for r in read_log(log)]
+        second_run = kinds[kinds.index("Outcome") :]
+        assert second_run == [
+            "Outcome",
+            *["RangeOutcome"] * 5,
+            *["Prediction"] * 9,
+            *["RangeForecast"] * 5,
+            "PaperStrategyEntry",
+        ]
+
+    def test_without_all_six_models_registered_there_is_no_paper_strategy(self, log: Path) -> None:
+        result = full_run(log, EVENING)  # the real six predictors and one context model
+        assert result.paper_entries == () and result.paper_waiting_for == ()
+
+    def test_dry_run_writes_nothing(self, log: Path) -> None:
+        result = paper_run(log, EVENING, dry_run=True)
+        assert len(result.paper_entries) == 1
+        assert not log.exists()
+
+    def run_main(self, log: Path, now: str, *arguments: str, **overrides: Any) -> tuple[int, str]:
+        votes = {name: says(position < 5) for position, name in enumerate(RULE_MODELS)}
+        lines: list[str] = []
+        code = main(
+            ["--log", str(log), *arguments],
+            now=lambda: at(now),
+            downloader=overrides.get("downloader", yahoo_downloader(calm())),
+            get=overrides.get("get", sec_getter()),
+            factories={**BASELINE_FACTORIES, **{name: votes[name] for name in RULE_MODELS[:3]}},
+            context_factories={name: votes[name] for name in RULE_MODELS[3:]},
+            range_factories={},
+            report=lines.append,
+            min_rows=100,
+        )
+        return code, "\n".join(lines)
+
+    def test_the_command_reports_the_entry(self, log: Path) -> None:
+        code, output = self.run_main(log, EVENING)
+        assert code == 0
+        assert (
+            "appended paper strategy: Holding for the session after 2030-03-14 "
+            "(5 of 6 models up, gate open)"
+        ) in output
+        code, output = self.run_main(log.with_name("dry.jsonl"), EVENING, "--dry-run")
+        assert "would append paper strategy: Holding" in output
+
+    def test_the_command_says_loudly_when_there_is_no_entry(self, log: Path) -> None:
+        code, output = self.run_main(log, EVENING, **sec_download_fails(calm()))
+        assert code == EXIT_CONTEXT_SKIPPED
+        assert (
+            "NO PAPER STRATEGY ENTRY for the session after 2030-03-14: no call from "
+            "logistic_ctx, xgboost_ctx, lstm_ctx"
+        ) in output
+        assert "paper strategy: Holding" not in output and "paper strategy: In cash" not in output
+
+
 class TestDefaults:
     def test_default_predictors_are_the_baselines_and_measured_models(self) -> None:
         assert list(default_factories()) == [*BASELINE_FACTORIES, *MODEL_FACTORIES]
@@ -879,6 +1169,11 @@ class TestDefaults:
             "xgboost_vol",
         ]
         assert list(default_range_factories()) == [f.model for f in result.range_forecasts]
+        # The real registry holds all six of the paper strategy's models.
+        (entry,) = result.paper_entries
+        up = sum(p.predicted_up for p in result.predictions if p.model in RULE_MODELS)
+        assert entry.models_up == up and entry.based_on_session == THU
+        assert read_log(log)[-1] == entry
         for prediction in result.predictions:
             if prediction.model in {*MODEL_FACTORIES, *CONTEXT_MODEL_FACTORIES}:
                 assert prediction.probability_up is not None

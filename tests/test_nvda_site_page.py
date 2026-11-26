@@ -19,6 +19,7 @@ from markets_lab.analysis.nvda.features import build_dataset
 from markets_lab.analysis.nvda.metrics import BootstrapConfig, wilson_interval
 from markets_lab.analysis.nvda.prediction_log import (
     Outcome,
+    PaperStrategyEntry,
     Prediction,
     RangeForecast,
     RangeOutcome,
@@ -788,6 +789,17 @@ class TestWhatIsPublished:
             if name != "tomorrow.md":
                 assert mixed[name] == plain[name]
         assert mixed["range.md"] != plain["range.md"]
+
+    def test_paper_strategy_entries_in_the_log_change_no_fragment_yet(
+        self, report: dict[str, Any], volatility: dict[str, Any]
+    ) -> None:
+        # The nightly job now writes the paper strategy's entries into the same
+        # log. The page does not show them yet, and must not trip over them.
+        entry = PaperStrategyEntry(at(f"{MON} 18:00"), MON, False, 1, True)
+        with_entry = [*log_records(), entry]
+        assert build_fragments(report, with_entry, volatility=volatility) == build_fragments(
+            report, log_records(), volatility=volatility
+        )
 
     def test_fragments_are_raw_html_blocks(
         self, report: dict[str, Any], volatility: dict[str, Any]

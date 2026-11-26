@@ -1,7 +1,7 @@
 """The live prediction log: append-only and tamper-evident.
 
 The log is a text file with one JSON record per line. Lines are only ever added.
-There are four kinds of record. Two are about direction:
+There are five kinds of record. Two are about direction:
 
 - A prediction: which model, the session it was based on, the direction it called
   for the next session, its probability if it has one, and when it was written.
@@ -15,10 +15,16 @@ Two are about the size of the move:
 - A range outcome: for one range forecast, whether the session's return fell inside
   the range, below it or above it.
 
+One is the simulated paper strategy:
+
+- A paper strategy entry: for the session after the one it is based on, whether the
+  strategy is "Holding" or "In cash", with the two things its fixed rule looks at:
+  how many of its six models said up, and whether its volatility gate was open.
+
 Whether a prediction was right is never written into the prediction itself, since
 that would mean editing it later. It is worked out by pairing each prediction with
 the outcome of the session after the one it was based on (`scored_predictions`,
-and `scored_ranges` for ranges).
+`scored_ranges` for ranges and `scored_paper_strategy` for the paper strategy).
 
 The log holds no prices and no realised returns. What happened is recorded only as
 "up or not" and as "inside, below or above" each forecast range.
@@ -35,6 +41,9 @@ What makes it trustworthy:
 - A range outcome must follow the range forecast it scores and the outcome of the
   same session, and must not contradict that outcome: a session that closed up
   cannot have fallen below a range that starts above zero, and so on.
+- A paper strategy entry must follow the calls of all six of its models for the
+  same session, must count them correctly, and must be what the rule gives for
+  that count and gate. A session where any of the six made no call has no entry.
 
 Check a log file from the repository root:
 
@@ -57,6 +66,8 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import pandas as pd
+
+from markets_lab.analysis.nvda.paper_strategy.rule import MIN_MODELS_UP, RULE_MODELS
 
 DEFAULT_LOG_PATH = Path("predictions/nvda.jsonl")
 SCHEMA_VERSION = 1
@@ -114,6 +125,17 @@ _RANGE_OUTCOME_KEYS = {
     "previous_session",
     "model",
     "position",
+    "prev_hash",
+    "hash",
+}
+_PAPER_STRATEGY_KEYS = {
+    "v",
+    "type",
+    "made_at",
+    "based_on_session",
+    "holding",
+    "models_up",
+    "gate_open",
     "prev_hash",
     "hash",
 }
@@ -227,7 +249,42 @@ class RangeOutcome:
             raise LogError(f"position must be one of {', '.join(RANGE_POSITIONS)}")
 
 
-Record = Prediction | Outcome | RangeForecast | RangeOutcome
+@dataclass(frozen=True, slots=True)
+class PaperStrategyEntry:
+    """The paper strategy's state for the session after `based_on_session`.
+
+    `holding` is True for "Holding" and False for "In cash". `models_up` is how
+    many of the rule's six models said up and `gate_open` whether the volatility
+    gate was open; the rule fixes `holding` from those two.
+    """
+
+    made_at: datetime
+    based_on_session: date
+    holding: bool
+    models_up: int
+    gate_open: bool
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "made_at", _utc_seconds(self.made_at, "made_at"))
+        _check_session(self.based_on_session, "based_on_session")
+        if not isinstance(self.holding, bool):
+            raise LogError("holding must be true or false")
+        if not isinstance(self.gate_open, bool):
+            raise LogError("gate_open must be true or false")
+        if isinstance(self.models_up, bool) or not isinstance(self.models_up, int):
+            raise LogError("models_up must be a whole number")
+        if not 0 <= self.models_up <= len(RULE_MODELS):
+            raise LogError(f"models_up must be between 0 and {len(RULE_MODELS)}")
+        if self.holding != (self.models_up >= MIN_MODELS_UP and self.gate_open):
+            raise LogError(
+                f"holding does not follow the rule: {self.models_up} of {len(RULE_MODELS)} "
+                f"models up with the gate {'open' if self.gate_open else 'closed'}"
+            )
+
+
+Record = Prediction | Outcome | RangeForecast | RangeOutcome | PaperStrategyEntry
+_Forecast = Prediction | RangeForecast | PaperStrategyEntry
+"""Records written before the session they are about."""
 
 
 def range_position(lower_return: float, upper_return: float, realised_return: float) -> str:
@@ -391,6 +448,42 @@ def scored_ranges(records: Sequence[Record]) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=columns)
 
 
+def scored_paper_strategy(records: Sequence[Record]) -> pd.DataFrame:
+    """One row per paper strategy entry, paired with its outcome where known.
+
+    Columns: `based_on_session`, `target_session`, `holding`, `models_up`,
+    `gate_open`, `made_at`, `went_up`. `target_session` and `went_up` are missing
+    until the outcome has been recorded.
+    """
+    outcomes = {r.previous_session: r for r in records if isinstance(r, Outcome)}
+    rows: list[dict[str, Any]] = []
+    for record in records:
+        if not isinstance(record, PaperStrategyEntry):
+            continue
+        outcome = outcomes.get(record.based_on_session)
+        rows.append(
+            {
+                "based_on_session": record.based_on_session,
+                "target_session": outcome.session if outcome else None,
+                "holding": record.holding,
+                "models_up": record.models_up,
+                "gate_open": record.gate_open,
+                "made_at": record.made_at,
+                "went_up": outcome.went_up if outcome else None,
+            }
+        )
+    columns = [
+        "based_on_session",
+        "target_session",
+        "holding",
+        "models_up",
+        "gate_open",
+        "made_at",
+        "went_up",
+    ]
+    return pd.DataFrame(rows, columns=columns)
+
+
 # -- line format ---------------------------------------------------------------
 
 
@@ -428,6 +521,16 @@ def _payload(record: Record) -> dict[str, Any]:
             "level": record.level,
             "lower_return": record.lower_return,
             "upper_return": record.upper_return,
+        }
+    if isinstance(record, PaperStrategyEntry):
+        return {
+            "v": SCHEMA_VERSION,
+            "type": "paper_strategy",
+            "made_at": record.made_at.strftime(_TIMESTAMP_FORMAT),
+            "based_on_session": record.based_on_session.isoformat(),
+            "holding": record.holding,
+            "models_up": record.models_up,
+            "gate_open": record.gate_open,
         }
     if isinstance(record, RangeOutcome):
         return {
@@ -495,6 +598,15 @@ def _parse_line(line: str, expected_previous_hash: str) -> tuple[Record, str]:
             model=_text(raw["model"]),
             position=_text(raw["position"]),
         )
+    elif kind == "paper_strategy":
+        _check_keys(raw, _PAPER_STRATEGY_KEYS)
+        record = PaperStrategyEntry(
+            made_at=_parse_timestamp(raw["made_at"]),
+            based_on_session=_parse_date(raw["based_on_session"]),
+            holding=raw["holding"],
+            models_up=raw["models_up"],
+            gate_open=raw["gate_open"],
+        )
     else:
         raise LogError(f"unknown record type {kind!r}")
     if raw["prev_hash"] != expected_previous_hash:
@@ -520,7 +632,8 @@ def _check_keys(raw: dict[str, Any], expected: set[str]) -> None:
 
 def _check_sequence(records: Sequence[Record]) -> None:
     """Rules that involve more than one record. Raises `LogError` on the first breach."""
-    seen_predictions: set[tuple[str, date]] = set()
+    seen_predictions: dict[tuple[str, date], bool] = {}
+    paper_entries: set[date] = set()
     range_forecasts: dict[tuple[str, date], RangeForecast] = {}
     range_outcomes: set[tuple[str, date]] = set()
     outcomes: dict[date, Outcome] = {}
@@ -531,7 +644,7 @@ def _check_sequence(records: Sequence[Record]) -> None:
         # Checked first because it does not rely on any clock: once the outcome of
         # a later session is on file, no prediction for that session can be added.
         if (
-            isinstance(record, Prediction | RangeForecast)
+            isinstance(record, _Forecast)
             and last_outcome is not None
             and record.based_on_session < last_outcome.session
         ):
@@ -539,9 +652,7 @@ def _check_sequence(records: Sequence[Record]) -> None:
                 f"{where}: based on {record.based_on_session}, but the outcome of a "
                 f"later session ({last_outcome.session}) was already recorded"
             )
-        moment = (
-            record.made_at if isinstance(record, Prediction | RangeForecast) else record.recorded_at
-        )
+        moment = record.made_at if isinstance(record, _Forecast) else record.recorded_at
         if last_time is not None and moment < last_time:
             raise LogError(f"{where}: written at {moment}, before the record above it")
         last_time = moment
@@ -549,6 +660,10 @@ def _check_sequence(records: Sequence[Record]) -> None:
         if isinstance(record, RangeOutcome):
             _check_range_outcome(record, where, outcomes, range_forecasts, range_outcomes)
             range_outcomes.add((record.model, record.previous_session))
+        elif isinstance(record, PaperStrategyEntry):
+            _check_paper_entry(record, where, seen_predictions, paper_entries)
+            paper_entries.add(record.based_on_session)
+            _check_window(record, where)
         elif isinstance(record, Prediction | RangeForecast):
             key = (record.model, record.based_on_session)
             what = "prediction" if isinstance(record, Prediction) else "range forecast"
@@ -559,20 +674,10 @@ def _check_sequence(records: Sequence[Record]) -> None:
                     f"{record.based_on_session}"
                 )
             if isinstance(record, Prediction):
-                seen_predictions.add(key)
+                seen_predictions[key] = record.predicted_up
             else:
                 range_forecasts[key] = record
-            earliest, deadline = prediction_window(record.based_on_session)
-            if record.made_at < earliest:
-                raise LogError(
-                    f"{where}: written before the session it is based on "
-                    f"({record.based_on_session}) had closed"
-                )
-            if record.made_at >= deadline:
-                raise LogError(
-                    f"{where}: written at {record.made_at}, after the next session could "
-                    f"have opened ({deadline}); a prediction must come before its session"
-                )
+            _check_window(record, where)
         else:
             session_close = datetime.combine(record.session, MARKET_CLOSE, tzinfo=MARKET_TZ)
             if record.recorded_at < session_close:
@@ -584,6 +689,46 @@ def _check_sequence(records: Sequence[Record]) -> None:
                 )
             last_outcome = record
             outcomes[record.previous_session] = record
+
+
+def _check_window(record: _Forecast, where: str) -> None:
+    """Written after its session closed and before the next one could have opened."""
+    earliest, deadline = prediction_window(record.based_on_session)
+    if record.made_at < earliest:
+        raise LogError(
+            f"{where}: written before the session it is based on "
+            f"({record.based_on_session}) had closed"
+        )
+    if record.made_at >= deadline:
+        raise LogError(
+            f"{where}: written at {record.made_at}, after the next session could "
+            f"have opened ({deadline}); a prediction must come before its session"
+        )
+
+
+def _check_paper_entry(
+    record: PaperStrategyEntry,
+    where: str,
+    predictions: dict[tuple[str, date], bool],
+    already: set[date],
+) -> None:
+    """One entry per session, after the calls of all six rule models for that
+    session, with `models_up` equal to how many of them said up."""
+    session = record.based_on_session
+    if session in already:
+        raise LogError(f"{where}: the paper strategy already has an entry based on {session}")
+    missing = [name for name in RULE_MODELS if (name, session) not in predictions]
+    if missing:
+        raise LogError(
+            f"{where}: the paper strategy needs a call from every one of its models based "
+            f"on {session}; none on record from {', '.join(missing)}"
+        )
+    up = sum(predictions[(name, session)] for name in RULE_MODELS)
+    if record.models_up != up:
+        raise LogError(
+            f"{where}: says {record.models_up} models called up based on {session}, "
+            f"but the log has {up}"
+        )
 
 
 def _check_range_outcome(
@@ -711,6 +856,7 @@ def main(argv: Sequence[str] | None = None, *, report: Callable[[str], None] = _
         (Outcome, "outcomes"),
         (RangeForecast, "range forecasts"),
         (RangeOutcome, "range outcomes"),
+        (PaperStrategyEntry, "paper strategy entries"),
     ]
     summary = ", ".join(
         f"{sum(isinstance(r, kind) for r in records)} {label}" for kind, label in counts
