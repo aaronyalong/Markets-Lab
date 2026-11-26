@@ -1,8 +1,16 @@
-"""Collect recent NVIDIA headlines from three free sources.
+"""Collect recent NVIDIA headlines from two free sources whose terms allow it.
 
-- NVIDIA's own newsroom feed (press releases and blog posts),
-- SEC EDGAR (the company's 8-K, 10-Q and 10-K filings), and
-- Yahoo Finance's news list for NVDA (headlines from many publishers).
+- SEC EDGAR (the company's 8-K, 10-Q and 10-K filings). SEC information "may be
+  copied or further distributed" without permission; the page credits SEC EDGAR.
+- Yahoo Finance's official RSS feed for NVDA. Yahoo's terms forbid automated
+  collection in general but allow showing RSS feed content "without modification",
+  with credit and a link to the full article. So a title is kept exactly as the
+  feed gives it, or the item is skipped; it is never shortened or edited.
+
+NVIDIA's own newsroom is not collected: its terms forbid automated access and
+public display. The page links to the newsroom instead. Until 2026-11-24 the
+newsroom feed and Yahoo's unofficial news list (through yfinance) were collected;
+those day files are still read, but the page no longer shows their items.
 
 Only the headline, publisher, time and link are kept. Article text and publishers'
 summaries are never stored or shown: the site links out to them.
@@ -33,10 +41,9 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from pathlib import Path
-from typing import Any
 from urllib.parse import urlsplit
 
-NEWSROOM_URL = "https://nvidianews.nvidia.com/releases.xml"
+YAHOO_RSS_URL = "https://feeds.finance.yahoo.com/rss/2.0/headline?s=NVDA&region=US&lang=en-US"
 EDGAR_URL = "https://data.sec.gov/submissions/CIK0001045810.json"
 EDGAR_ARCHIVE = "https://www.sec.gov/Archives/edgar/data/1045810"
 
@@ -50,8 +57,11 @@ WINDOW_HOURS = 24
 MAX_TITLE_LENGTH = 200
 MAX_PUBLISHER_LENGTH = 60
 
-NEWSROOM, EDGAR, YAHOO = "nvidia_newsroom", "sec_edgar", "yahoo_finance"
-NEWSROOM_HOSTS = frozenset({"nvidianews.nvidia.com", "blogs.nvidia.com", "www.nvidia.com"})
+EDGAR, YAHOO_RSS = "sec_edgar", "yahoo_finance_rss"
+SOURCES = frozenset({EDGAR, YAHOO_RSS})
+# Collected until 2026-11-24 and no longer (see above). Old day files keep them;
+# they are read so those files stay valid, and never shown.
+RETIRED_SOURCES = frozenset({"nvidia_newsroom", "yahoo_finance"})
 RELEVANT_WORDS = ("nvidia", "nvda")
 
 # Filings a reader would recognise as news. Insider-trade forms and the like are
@@ -121,6 +131,22 @@ def clean_text(text: object, limit: int) -> str:
     return collapsed[: limit - 1].rstrip() + "…"
 
 
+def exact_title(text: object, limit: int) -> str | None:
+    """The title as given, or None if it cannot be shown unchanged.
+
+    Runs of whitespace become one space, which is how a browser shows them anyway.
+    A title that is too long, or holds invisible or control characters, is not
+    shortened or cleaned: the caller skips the item.
+    """
+    if not isinstance(text, str):
+        return None
+    words = text.split()
+    title = " ".join(words)
+    if not title or len(title) > limit or not all(word.isprintable() for word in words):
+        return None
+    return title
+
+
 def safe_url(url: object, *, hosts: frozenset[str] | None = None) -> str | None:
     """The URL if it is a plain https link (on an expected host, if given)."""
     if not isinstance(url, str):
@@ -145,25 +171,31 @@ def _utc(moment: datetime) -> datetime:
 # ------------------------------------------------------------------------ parsing
 
 
-def parse_newsroom(xml_text: str) -> list[NewsItem]:
-    """Items from NVIDIA's newsroom RSS feed."""
+def parse_yahoo_rss(xml_text: str) -> list[NewsItem]:
+    """Headlines from Yahoo Finance's NVDA feed that mention NVIDIA in the title.
+
+    Only the title, link and time are read; the feed's `description` (the
+    publisher's summary) is never read. Titles and links are kept exactly as given.
+    """
     try:
         root = ET.fromstring(xml_text)
     except ET.ParseError as exc:
-        raise NewsError(f"NVIDIA newsroom feed is not valid XML: {exc}") from exc
+        raise NewsError(f"Yahoo Finance feed is not valid XML: {exc}") from exc
     entries = root.findall("./channel/item")
     if not entries:
-        raise NewsError("NVIDIA newsroom feed has no items")
+        raise NewsError("Yahoo Finance feed has no items")
     items: list[NewsItem] = []
     for entry in entries:
-        title = clean_text(entry.findtext("title"), MAX_TITLE_LENGTH)
-        url = safe_url(entry.findtext("link"), hosts=NEWSROOM_HOSTS)
+        title = exact_title(entry.findtext("title"), MAX_TITLE_LENGTH)
+        if title is None or not any(word in title.lower() for word in RELEVANT_WORDS):
+            continue
+        url = safe_url(entry.findtext("link"))
         try:
             published = _utc(parsedate_to_datetime(entry.findtext("pubDate") or ""))
         except (TypeError, ValueError):
             continue
-        if title and url:
-            items.append(NewsItem(NEWSROOM, "NVIDIA Newsroom", title, url, published))
+        if url:
+            items.append(NewsItem(YAHOO_RSS, "Yahoo Finance", title, url, published))
     return items
 
 
@@ -213,34 +245,6 @@ def parse_edgar(json_text: str) -> list[NewsItem]:
     return items
 
 
-def parse_yahoo(entries: Sequence[Mapping[str, Any]]) -> list[NewsItem]:
-    """Headlines from Yahoo Finance's news list that actually mention NVIDIA.
-
-    Only the headline, the publisher's name, the time and the link are read.
-    """
-    items: list[NewsItem] = []
-    for entry in entries:
-        content = entry.get("content", entry)
-        if not isinstance(content, Mapping):
-            continue
-        title = clean_text(content.get("title"), MAX_TITLE_LENGTH)
-        if not any(word in title.lower() for word in RELEVANT_WORDS):
-            continue
-        link = content.get("canonicalUrl")
-        url = safe_url(link.get("url") if isinstance(link, Mapping) else None)
-        provider = content.get("provider")
-        name = provider.get("displayName") if isinstance(provider, Mapping) else None
-        publisher = clean_text(name, MAX_PUBLISHER_LENGTH) or "Yahoo Finance"
-        try:
-            stamp = str(content.get("pubDate") or "").replace("Z", "+00:00")
-            published = _utc(datetime.fromisoformat(stamp))
-        except ValueError:
-            continue
-        if title and url:
-            items.append(NewsItem(YAHOO, publisher, title, url, published))
-    return items
-
-
 # ----------------------------------------------------------------------- fetching
 
 
@@ -248,10 +252,6 @@ def _get(url: str, *, user_agent: str) -> str:
     request = urllib.request.Request(url, headers={"User-Agent": user_agent})
     with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
         return response.read().decode("utf-8", errors="replace")
-
-
-def fetch_newsroom() -> list[NewsItem]:
-    return parse_newsroom(_get(NEWSROOM_URL, user_agent=DEFAULT_USER_AGENT))
 
 
 def sec_get(url: str) -> str:
@@ -264,16 +264,13 @@ def fetch_edgar() -> list[NewsItem]:
     return parse_edgar(sec_get(EDGAR_URL))
 
 
-def fetch_yahoo() -> list[NewsItem]:
-    import yfinance as yf
-
-    return parse_yahoo(yf.Ticker("NVDA").news or [])
+def fetch_yahoo_rss() -> list[NewsItem]:
+    return parse_yahoo_rss(_get(YAHOO_RSS_URL, user_agent=DEFAULT_USER_AGENT))
 
 
 DEFAULT_FETCHERS: dict[str, Fetcher] = {
-    NEWSROOM: fetch_newsroom,
     EDGAR: fetch_edgar,
-    YAHOO: fetch_yahoo,
+    YAHOO_RSS: fetch_yahoo_rss,
 }
 
 
@@ -338,7 +335,7 @@ def from_json(text: str) -> Collection:
             title = clean_text(raw["title"], MAX_TITLE_LENGTH)
             publisher = clean_text(raw["publisher"], MAX_PUBLISHER_LENGTH)
             source = str(raw["source"])
-            if not url or not title or not publisher or source not in DEFAULT_FETCHERS:
+            if not url or not title or not publisher or source not in SOURCES | RETIRED_SOURCES:
                 raise ValueError(f"bad item: {raw!r}")
             items.append(NewsItem(source, publisher, title, url, _stamp(raw["published_at"])))
         return Collection(

@@ -47,7 +47,14 @@ from markets_lab.analysis.nvda.prediction_log import (
     scored_ranges,
 )
 from markets_lab.analysis.nvda.volatility import backtest as volatility_backtest
-from markets_lab.collectors.nvda_news import Collection, NewsError, NewsItem, load_recent
+from markets_lab.collectors.nvda_news import (
+    SOURCES,
+    YAHOO_RSS,
+    Collection,
+    NewsError,
+    NewsItem,
+    load_recent,
+)
 from markets_lab.market_calendar import next_session
 
 GENERATED_DIR = "_generated"
@@ -55,6 +62,7 @@ BUY_AND_HOLD = "always_up"
 SESSIONS_TO_TELL_55_FROM_50 = 385
 NEWS_DAYS_SHOWN = 3
 NEWS_ITEMS_SHOWN = 8
+NVIDIA_NEWSROOM = "https://nvidianews.nvidia.com/"
 
 DISPLAY_NAMES = {
     "always_up": "Always up",
@@ -378,6 +386,8 @@ def news_fragment(collections: Sequence[Collection]) -> str:
 
     Headlines are other people's words. They are escaped, shown as plain text and
     labelled as such; nothing here is written or chosen by a person or a model.
+    Only sources still collected are shown (see `collectors.nvda_news`); items from
+    retired sources stay in their day files but never reach the page.
     """
     if not collections:
         return _raw(
@@ -387,7 +397,8 @@ def news_fragment(collections: Sequence[Collection]) -> str:
     seen: dict[str, NewsItem] = {}
     for collection in collections:
         for item in collection.items:
-            seen.setdefault(item.url, item)
+            if item.source in SOURCES:
+                seen.setdefault(item.url, item)
     latest = sorted(seen.values(), key=lambda item: item.published_at, reverse=True)
     latest = latest[:NEWS_ITEMS_SHOWN]
     collected = max(collection.collected_at for collection in collections)
@@ -398,18 +409,28 @@ def news_fragment(collections: Sequence[Collection]) -> str:
             "<li>"
             f'<a href="{html.escape(item.url, quote=True)}" target="_blank" '
             f'rel="noopener nofollow">{html.escape(item.title)}</a>'
-            f'<span class="news-meta">{html.escape(item.publisher)} · '
+            f'<span class="news-meta">{html.escape(_credit(item))} · '
             f"{html.escape(_stamp(item.published_at))}</span>"
             "</li>"
             for item in latest
         )
         body = f'<ul class="news-list">{rows}</ul>'
     note = (
-        f"Collected automatically on {_stamp(collected)} from NVIDIA's newsroom, SEC filings "
-        "and Yahoo Finance. Headlines are their publishers' words, not this site's, and "
-        "are not checked or selected by a person. Not advice."
+        html.escape(
+            f"Collected automatically on {_stamp(collected)} from NVIDIA's SEC filings "
+            "(SEC EDGAR) and Yahoo Finance's NVDA news feed. Headlines are their "
+            "publishers' words, not this site's, and are not checked or selected by a "
+            "person. NVIDIA's own press releases are on "
+        )
+        + f'<a href="{NVIDIA_NEWSROOM}" target="_blank" rel="noopener">its newsroom</a>. '
+        + "Not advice."
     )
-    return _raw(f'{body}<p class="muted small">{html.escape(note)}</p>')
+    return _raw(f'{body}<p class="muted small">{note}</p>')
+
+
+def _credit(item: NewsItem) -> str:
+    """Who to credit beside a headline: Yahoo's feed items are credited to Yahoo."""
+    return f"via {item.publisher}" if item.source == YAHOO_RSS else item.publisher
 
 
 def track_record_fragment(records: Sequence[Record]) -> str:

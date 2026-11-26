@@ -44,11 +44,16 @@ down the next day?
 
 ### NVIDIA headlines
 
-Each morning a separate job collects the last day's NVIDIA headlines from NVIDIA's
-newsroom feed, the company's SEC filings and Yahoo Finance's news list, and the
-NVIDIA page links to them. Only the headline, publisher, time and link are kept;
-article text and publishers' summaries are not stored or shown. Each day is written
-once to `news/nvda/YYYY-MM-DD.json` and never changed afterwards.
+Each morning a separate job collects the last day's NVIDIA headlines from the
+company's SEC filings (SEC EDGAR) and Yahoo Finance's official NVDA RSS feed, and
+the NVIDIA page links to them. These are the two sources whose terms allow it:
+SEC information may be freely copied and redistributed, and Yahoo allows its RSS
+feeds to be shown unmodified, with credit and a link. Yahoo headlines are shown
+exactly as the feed gives them, marked "via Yahoo Finance". NVIDIA's own newsroom
+is not collected (its terms forbid automated access); the page links to it instead.
+Only the headline, publisher, time and link are kept; article text and publishers'
+summaries are not stored or shown. Each day is written once to
+`news/nvda/YYYY-MM-DD.json` and never changed afterwards.
 
 ```bash
 uv run python -m markets_lab.collectors.nvda_news --dry-run   # show, write nothing

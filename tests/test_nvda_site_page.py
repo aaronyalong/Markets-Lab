@@ -41,7 +41,7 @@ from markets_lab.analysis.nvda.site_page import (
 from markets_lab.analysis.nvda.validation import WalkForwardConfig
 from markets_lab.analysis.nvda.volatility import backtest as volatility_backtest
 from markets_lab.analysis.nvda.volatility.dataset import build_volatility_dataset
-from markets_lab.collectors.nvda_news import Collection, NewsItem, save_day
+from markets_lab.collectors.nvda_news import EDGAR, YAHOO_RSS, Collection, NewsItem, save_day
 from nvda_test_predictors import LeastSquaresLearner
 from price_frames import at, make_prices
 
@@ -323,10 +323,10 @@ class TestStatusStrip:
             assert not re.search(r"\b(buy|sell|signal|recommend\w*|bullish|bearish)\b", text)
 
 
-def headline(hour: int, title: str, url: str | None = None) -> NewsItem:
+def headline(hour: int, title: str, url: str | None = None, *, source: str = YAHOO_RSS) -> NewsItem:
     return NewsItem(
-        source="yahoo_finance",
-        publisher="Example Wire",
+        source=source,
+        publisher="Yahoo Finance" if source == YAHOO_RSS else "Example Wire",
         title=title,
         url=url or f"https://news.example.org/{hour}",
         published_at=at(f"{MON} {hour:02d}:00"),
@@ -351,7 +351,30 @@ class TestNews:
             "NVIDIA ships a thing</a>"
         ) in fragment
         text = text_of(fragment)
-        assert "Example Wire ·" in text and "09:00 UTC" in text
+        assert "via Yahoo Finance ·" in text and "09:00 UTC" in text
+
+    def test_sec_filings_are_credited_to_sec_edgar_without_via(self) -> None:
+        filing = NewsItem(
+            EDGAR,
+            "SEC EDGAR",
+            "Form 8-K: current report",
+            "https://www.sec.gov/a",
+            at(f"{MON} 09:00"),
+        )
+        text = text_of(news_fragment([news_day(filing)]))
+        assert "SEC EDGAR ·" in text and "via SEC EDGAR" not in text
+
+    def test_headlines_from_retired_sources_are_never_shown(self) -> None:
+        # NVIDIA's newsroom and Yahoo's unofficial list stopped on 2026-11-24.
+        old = [
+            headline(10, "From the newsroom", source="nvidia_newsroom"),
+            headline(11, "From the unofficial list", source="yahoo_finance"),
+        ]
+        fragment = news_fragment([news_day(*old, headline(9, "From the feed"))])
+        titles = re.findall(r'rel="noopener nofollow">([^<]+)</a>', fragment)
+        assert titles == ["From the feed"]
+        only_old = text_of(news_fragment([news_day(*old)]))
+        assert "No NVIDIA headlines in the last few days." in only_old
 
     def test_newest_first_capped_and_without_duplicates_across_days(self) -> None:
         many = [headline(hour, f"Headline {hour}") for hour in range(1, 13)]
@@ -377,6 +400,17 @@ class TestNews:
         assert "Collected automatically on 19 Mar 2030, 11:00 UTC" in text
         assert "their publishers' words, not this site's" in text
         assert "Not advice." in text
+
+    def test_the_note_names_what_is_collected_and_links_to_the_newsroom(self) -> None:
+        fragment = news_fragment([news_day(headline(9, "NVIDIA ships a thing"))])
+        text = text_of(fragment)
+        assert "from NVIDIA's SEC filings (SEC EDGAR) and Yahoo Finance's NVDA news feed" in text
+        assert "NVIDIA's own press releases are on its newsroom" in text
+        assert ">its newsroom</a>. Not advice." in fragment
+        assert (
+            '<a href="https://nvidianews.nvidia.com/" target="_blank" rel="noopener">' in fragment
+        )
+        assert "newsroom, SEC filings" not in text
 
 
 class TestTrackRecord:
