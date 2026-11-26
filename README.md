@@ -15,12 +15,12 @@ Work in progress.
 
 | Part | State |
 |---|---|
-| NVIDIA next-day direction experiment | Backtest done; the live prediction log starts with the first nightly run |
+| NVIDIA experiment (next-day direction and range) | Backtests done; the live log runs nightly and is shown on the site |
 | Earnings explainer (cited summaries of SEC filings) | Planned, not started |
 
 ## What it will contain
 
-### NVIDIA predictor (experiment)
+### NVIDIA (experiment)
 
 Can machine learning beat naive baselines at predicting whether NVDA closes up or
 down the next day?

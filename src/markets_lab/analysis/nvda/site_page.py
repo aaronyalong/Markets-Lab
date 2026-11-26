@@ -448,19 +448,26 @@ def track_record_fragment(records: Sequence[Record]) -> str:
         f"so far. It takes about {SESSIONS_TO_TELL_55_FROM_50} scored sessions to tell 55% "
         "accuracy from a coin flip, so early numbers mean very little."
     )
-    body = "".join(
-        "<tr>"
-        f"<td>{html.escape(display_name(row.name))}</td>"
-        f'<td class="muted">{kind_of(row.name)}</td>'
-        f"<td>{row.scored}</td><td>{row.hits}</td>"
-        f"<td>{_percent(row.accuracy)}</td><td>{_interval(row.interval)}</td>"
-        "</tr>"
-        for row in rows
-    )
-    table = (
-        '<table class="lab-table"><thead><tr><th>Model or baseline</th><th>Type</th>'
-        "<th>Scored calls</th><th>Right</th><th>Accuracy</th><th>95% interval</th>"
-        f"</tr></thead><tbody>{body}</tbody></table>"
+    table = _table(
+        (
+            Column("Model or baseline"),
+            Column("Type", muted=True),
+            Column("Scored calls"),
+            Column("Right"),
+            Column("Accuracy"),
+            Column("95% interval"),
+        ),
+        [
+            (
+                html.escape(display_name(row.name)),
+                kind_of(row.name),
+                str(row.scored),
+                str(row.hits),
+                _percent(row.accuracy),
+                _interval(row.interval),
+            )
+            for row in rows
+        ],
     )
     series = cumulative_scores(scored)
     chart = (
@@ -503,21 +510,28 @@ def backtest_fragment(report: Mapping[str, Any]) -> str:
             f"{_interval(gap['annualised_return_difference_interval'], points=True)}"
         )
         rows.append(
-            "<tr>"
-            f"<td>{html.escape(display_name(name))}<br><span class='muted small'>"
-            f"{html.escape(DESCRIPTIONS.get(name, ''))}</span></td>"
-            f"<td>{_percent(row['accuracy'])}<br><span class='muted small'>"
-            f"{_interval(row['accuracy_interval'])}</span></td>"
-            f"<td>{_percent(returns['annualised_return'])}<br><span class='muted small'>"
-            f"{_interval(returns['annualised_return_interval'])}</span></td>"
-            f"<td>{difference}</td>"
-            "</tr>"
+            (
+                f"{html.escape(display_name(name))}<br><span class='muted small'>"
+                f"{html.escape(DESCRIPTIONS.get(name, ''))}</span>",
+                f"{_percent(row['accuracy'])}<br><span class='muted small'>"
+                f"{_interval(row['accuracy_interval'])}</span>",
+                f"{_percent(returns['annualised_return'])}<br><span class='muted small'>"
+                f"{_interval(returns['annualised_return_interval'])}</span>",
+                difference,
+            )
         )
-    table = (
-        '<table class="lab-table"><thead><tr><th>Model or baseline</th><th>Accuracy</th>'
-        f"<th>Simulated return per year<br><span class='muted small'>after {cost} basis "
-        "points per trade</span></th><th>Return vs buy-and-hold</th></tr></thead>"
-        f"<tbody>{''.join(rows)}</tbody></table>"
+    table = _table(
+        (
+            Column("Model or baseline"),
+            Column("Accuracy"),
+            Column(
+                f"Simulated return per year<br><span class='muted small'>after {cost} basis "
+                "points per trade</span>",
+                label="Return per year after costs",
+            ),
+            Column("Return vs buy-and-hold"),
+        ),
+        rows,
     )
     return _raw(
         f'<div class="stat-grid">{tiles}</div>'
@@ -688,20 +702,21 @@ def range_fragment(records: Sequence[Record], report: Mapping[str, Any]) -> str:
         f"{_position_note(row['position'])}"
         "</div>"
     )
-    body = "".join(
-        "<tr>"
-        f"<td>{html.escape(range_name(name))}<br><span class='muted small'>"
-        f"{html.escape(RANGE_DESCRIPTIONS.get(name, ''))}</span></td>"
-        f'<td class="muted">{range_kind(name)}</td>'
-        f"<td>{_range_text(rows.loc[name, 'lower_return'], rows.loc[name, 'upper_return'])}</td>"
-        + ("" if pending else f"<td>{html.escape(_position_word(rows.loc[name, 'position']))}</td>")
-        + "</tr>"
-        for name in names
-    )
-    result_column = "" if pending else "<th>The move was</th>"
-    table = (
-        '<table class="lab-table"><thead><tr><th>Forecaster</th><th>Type</th>'
-        f"<th>{level:.0%} range</th>{result_column}</tr></thead><tbody>{body}</tbody></table>"
+    columns = [Column("Forecaster"), Column("Type", muted=True), Column(f"{level:.0%} range")]
+    if not pending:
+        columns.append(Column("The move was"))
+    table = _table(
+        columns,
+        [
+            (
+                f"{html.escape(range_name(name))}<br><span class='muted small'>"
+                f"{html.escape(RANGE_DESCRIPTIONS.get(name, ''))}</span>",
+                range_kind(name),
+                _range_text(rows.loc[name, "lower_return"], rows.loc[name, "upper_return"]),
+            )
+            + (() if pending else (html.escape(_position_word(rows.loc[name, "position"])),))
+            for name in names
+        ],
     )
     return _raw(
         f'<div class="call-head"><p class="call-heading">{heading}</p>{ADVICE_TAG}</div>{sub}'
@@ -736,20 +751,29 @@ def range_record_fragment(records: Sequence[Record]) -> str:
         interval = wilson_interval(held, n) if n else None
         width = float((mine["upper_return"] - mine["lower_return"]).mean()) if n else None
         body.append(
-            "<tr>"
-            f"<td>{html.escape(range_name(name))}</td>"
-            f'<td class="muted">{range_kind(name)}</td>'
-            f"<td>{n}</td><td>{held}</td>"
-            f"<td>{_percent(share)}<br><span class='muted small'>{_interval(interval)}</span></td>"
-            f"<td>{below} / {above}</td>"
-            f"<td>{_width(width)}</td>"
-            "</tr>"
+            (
+                html.escape(range_name(name)),
+                range_kind(name),
+                str(n),
+                str(held),
+                f"{_percent(share)}<br><span class='muted small'>{_interval(interval)}</span>",
+                f"{below} / {above}",
+                _width(width),
+            )
         )
-    table = (
-        '<table class="lab-table"><thead><tr><th>Forecaster</th><th>Type</th>'
-        "<th>Scored ranges</th><th>Held</th><th>Share held<br><span class='muted small'>"
-        "95% interval</span></th><th>Missed below / above</th><th>Average width</th>"
-        f"</tr></thead><tbody>{''.join(body)}</tbody></table>"
+    table = _table(
+        (
+            Column("Forecaster"),
+            Column("Type", muted=True),
+            Column("Scored ranges"),
+            Column("Held"),
+            Column(
+                "Share held<br><span class='muted small'>95% interval</span>", label="Share held"
+            ),
+            Column("Missed below / above"),
+            Column("Average width"),
+        ),
+        body,
     )
     return _raw(f'<p class="muted">{html.escape(intro)}</p>{table}')
 
@@ -780,21 +804,28 @@ def range_backtest_fragment(report: Mapping[str, Any]) -> str:
     for name in ordered_forecasters(list(forecasters)):
         row = forecasters[name]
         rows.append(
-            "<tr>"
-            f"<td>{html.escape(range_name(name))}<br><span class='muted small'>"
-            f"{html.escape(RANGE_DESCRIPTIONS.get(name, ''))}</span></td>"
-            f'<td class="muted">{row["kind"]}</td>'
-            f"<td>{_percent(row['coverage'])}<br><span class='muted small'>"
-            f"{_interval(row['coverage_interval'])}</span></td>"
-            f"<td>{_percent(row['share_below'])} / {_percent(row['share_above'])}</td>"
-            f"<td>{_width(row['mean_width'])}</td>"
-            "</tr>"
+            (
+                f"{html.escape(range_name(name))}<br><span class='muted small'>"
+                f"{html.escape(RANGE_DESCRIPTIONS.get(name, ''))}</span>",
+                html.escape(str(row["kind"])),
+                f"{_percent(row['coverage'])}<br><span class='muted small'>"
+                f"{_interval(row['coverage_interval'])}</span>",
+                f"{_percent(row['share_below'])} / {_percent(row['share_above'])}",
+                _width(row["mean_width"]),
+            )
         )
-    table = (
-        '<table class="lab-table"><thead><tr><th>Forecaster</th><th>Type</th>'
-        f"<th>Share of outcomes held<br><span class='muted small'>built for {level:.0%}</span>"
-        "</th><th>Missed below / above</th><th>Average width</th></tr></thead>"
-        f"<tbody>{''.join(rows)}</tbody></table>"
+    table = _table(
+        (
+            Column("Forecaster"),
+            Column("Type", muted=True),
+            Column(
+                f"Share of outcomes held<br><span class='muted small'>built for {level:.0%}</span>",
+                label=f"Held (built for {level:.0%})",
+            ),
+            Column("Missed below / above"),
+            Column("Average width"),
+        ),
+        rows,
     )
     return _raw(
         f'<div class="stat-grid">{tile_markup}</div>'
@@ -1022,6 +1053,50 @@ def _figure_html(figure: go.Figure, element_id: str) -> str:
 
 
 # ------------------------------------------------------------------------ helpers
+
+
+@dataclass(frozen=True)
+class Column:
+    """One results-table column: its heading, and the label a phone shows instead.
+
+    `label` defaults to the heading and must be plain text; give it whenever the
+    heading carries markup.
+    """
+
+    heading: str
+    label: str = ""
+    muted: bool = False
+
+    @property
+    def phone_label(self) -> str:
+        return self.label or self.heading
+
+
+def _table(columns: Sequence[Column], rows: Sequence[Sequence[str]]) -> str:
+    """A results table from ready-made cell markup, one row per sequence.
+
+    Every cell after the first carries its column's label as `data-label`, so that
+    on a phone the stylesheet can show each row as a card: the first cell as its
+    title, then one labelled line per value.
+    """
+    head = "".join(f"<th>{column.heading}</th>" for column in columns)
+    body = "".join(
+        "<tr>"
+        + "".join(
+            _cell(column, value, labelled=i > 0)
+            for i, (column, value) in enumerate(zip(columns, row, strict=True))
+        )
+        + "</tr>"
+        for row in rows
+    )
+    return f'<table class="lab-table"><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>'
+
+
+def _cell(column: Column, value: str, *, labelled: bool) -> str:
+    attributes = f' data-label="{html.escape(column.phone_label)}"' if labelled else ""
+    if column.muted:
+        attributes += ' class="muted"'
+    return f"<td{attributes}>{value}</td>"
 
 
 def _raw(markup: str) -> str:

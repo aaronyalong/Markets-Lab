@@ -993,6 +993,73 @@ a:hover {
   }
 }
 
+// On phones each table row becomes a card: the first cell is its title, every
+// other cell one line with its column's name (data-label) on the left and the
+// value on the right. The header row is hidden from sight but kept for screen
+// readers.
+@media (max-width: 40rem) {
+  .lab-table {
+    display: block;
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    background: none;
+
+    thead {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+
+    tbody,
+    tr,
+    td {
+      display: block;
+    }
+
+    tr {
+      margin-bottom: 0.75rem;
+      padding: 0.85rem 1rem;
+      border: 1px solid $lab-border;
+      border-radius: 14px;
+      background: $lab-panel;
+    }
+
+    td {
+      padding: 0.3rem 0;
+      border-bottom: 0;
+    }
+
+    td:first-child {
+      padding: 0 0 0.45rem;
+    }
+
+    td[data-label] {
+      text-align: right;
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    td[data-label]::before {
+      content: attr(data-label);
+      float: left;
+      margin-right: 1rem;
+      font-family: $font-family-monospace;
+      font-size: 0.72rem;
+      letter-spacing: 0.06em;
+      line-height: 1.9;
+      text-transform: uppercase;
+      color: $lab-muted;
+    }
+
+    tbody tr:hover td {
+      background: none;
+    }
+  }
+}
+
 // -------------------------------------------------------------- market data look
 
 // Numbers and labels are set in the monospace face, like a quote screen.

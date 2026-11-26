@@ -143,6 +143,33 @@ def text_of(fragment: str) -> str:
     return html.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", without_scripts)))
 
 
+def table_rows(fragment: str) -> dict[str, list[str]]:
+    """Each body row's cells (inner markup), keyed by the text of its first cell."""
+    body = re.search(r"<tbody>(.*?)</tbody>", fragment, flags=re.DOTALL)
+    assert body is not None
+    rows = {}
+    for row in re.findall(r"<tr>(.*?)</tr>", body.group(1), flags=re.DOTALL):
+        cells = re.findall(r"<td[^>]*>(.*?)</td>", row, flags=re.DOTALL)
+        rows[text_of(cells[0].split("<br>")[0]).strip()] = cells
+    return rows
+
+
+def table_labels(fragment: str) -> list[tuple[list[str], list[list[str | None]]]]:
+    """For every table: its headings' text, and each body row's phone labels."""
+    tables = []
+    for table in re.findall(r'<table class="lab-table">(.*?)</table>', fragment, re.DOTALL):
+        headings = [text_of(h).strip() for h in re.findall(r"<th>(.*?)</th>", table, re.DOTALL)]
+        rows = [
+            [
+                html.unescape(label) if label else None
+                for label in re.findall(r'<td(?: data-label="([^"]*)")?[^>]*>', row)
+            ]
+            for row in re.findall(r"<tr>(.*?)</tr>", table.split("<tbody>")[1], re.DOTALL)
+        ]
+        tables.append((headings, rows))
+    return tables
+
+
 def chart_lines(figure: Any) -> dict[str, tuple[str, str]]:
     """Each line of a chart by its legend name: (colour, dash style)."""
     traces = figure.to_dict()["data"]
@@ -878,20 +905,20 @@ class TestRangeRecord:
         assert "1 session has been scored so far." in text
         assert "about 250 scored sessions" in text
         assert "built to hold the outcome 80% of the time" in text
-        rows = re.findall(r"<tr><td>(.*?)</tr>", fragment)
-        by_name = {row.split("</td>")[0]: row for row in rows}
-        held = by_name["Weighted recent average"]
-        assert "<td>1</td><td>1</td><td>100.0%" in held
-        assert "<td>0 / 0</td>" in held and "<td>7.0 points</td>" in held
-        missed = by_name["Long-run average"]
-        assert "<td>1</td><td>0</td><td>0.0%" in missed
-        assert "<td>0 / 1</td>" in missed
+        rows = table_rows(fragment)
+        held = rows["Weighted recent average"]
+        assert held[2:4] == ["1", "1"] and held[4].startswith("100.0%")
+        assert held[5:] == ["0 / 0", "7.0 points"]
+        missed = rows["Long-run average"]
+        assert missed[2:4] == ["1", "0"] and missed[4].startswith("0.0%")
+        assert missed[5] == "0 / 1"
 
     def test_a_forecaster_with_nothing_scored_shows_no_share(self) -> None:
         fragment = site_page.range_record_fragment([ranged(THU, "ewma_94")])
         assert "0 sessions have been scored so far." in text_of(fragment)
-        assert "<td>0</td><td>0</td><td>n/a" in fragment
-        assert "<td>n/a</td></tr>" in fragment
+        cells = table_rows(fragment)["Weighted recent average"]
+        assert cells[2:4] == ["0", "0"] and cells[4].startswith("n/a")
+        assert cells[-1] == "n/a"
 
 
 class TestRangeBacktest:
@@ -920,6 +947,45 @@ class TestRangeBacktest:
         shown = {trace["y"][0]: trace["x"][0] for trace in figure["data"]}
         coverage = volatility["forecasters"]["ewma_94"]["coverage"]
         assert shown["Weighted recent average"] == pytest.approx(100 * coverage)
+
+
+class TestPhoneTables:
+    """On phones every table row is a card, so each value must carry its column's name."""
+
+    def fragments(self, report: dict[str, Any], volatility: dict[str, Any]) -> dict[str, str]:
+        ranges = range_records()
+        return {
+            "track record": track_record_fragment(log_records()),
+            "backtest": backtest_fragment(report),
+            "latest range, pending": site_page.range_fragment(ranges, volatility),
+            "latest range, scored": site_page.range_fragment(
+                ranges[: 2 * len(FORECASTERS) + 1], volatility
+            ),
+            "range record": site_page.range_record_fragment(ranges),
+            "range backtest": site_page.range_backtest_fragment(volatility),
+        }
+
+    def test_every_value_is_labelled_with_its_column(
+        self, report: dict[str, Any], volatility: dict[str, Any]
+    ) -> None:
+        for where, fragment in self.fragments(report, volatility).items():
+            tables = table_labels(fragment)
+            assert len(tables) == 1, where
+            headings, rows = tables[0]
+            assert rows, where
+            for labels in rows:
+                assert len(labels) == len(headings), where
+                assert labels[0] is None, f"{where}: the row's title needs no label"
+                for heading, label in zip(headings[1:], labels[1:], strict=True):
+                    assert label and "<" not in label, where
+                    first_word = label.split()[0].lower()
+                    assert first_word in heading.lower(), f"{where}: {label!r} for {heading!r}"
+
+    def test_the_stylesheet_turns_rows_into_labelled_cards_on_phones(self) -> None:
+        theme = (Path(__file__).parents[1] / "site" / "theme.scss").read_text()
+        phone = theme.split("@media (max-width: 40rem)")[1]
+        assert "content: attr(data-label)" in phone
+        assert "thead {" in phone and "clip-path: inset(50%)" in phone
 
 
 class TestCommandLine:
