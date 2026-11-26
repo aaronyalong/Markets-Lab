@@ -141,6 +141,20 @@ def sharpe_ratio(net_returns: np.ndarray) -> float:
     return float(np.mean(net_returns) / spread * math.sqrt(SESSIONS_PER_YEAR))
 
 
+def max_drawdown(net_returns: np.ndarray) -> float:
+    """Worst fall of the compounded value from its highest point so far.
+
+    Returned as a negative fraction (-0.5 is a halving), or 0.0 if the value never
+    fell. The starting value counts as a peak, so a first-day loss is a drawdown.
+    """
+    returns = np.asarray(net_returns, dtype="float64")
+    if returns.size == 0:
+        return math.nan
+    value = np.exp(np.cumsum(np.log1p(returns)))
+    peak = np.maximum.accumulate(np.concatenate(([1.0], value)))[1:]
+    return float(min(0.0, float((value / peak - 1.0).min())))
+
+
 def block_bootstrap_indices(
     n: int, *, block_length: int, n_resamples: int, rng: np.random.Generator
 ) -> Iterator[np.ndarray]:

@@ -377,6 +377,39 @@ def write_report(report: Mapping[str, Any], path: Path) -> None:
     temporary.replace(path)
 
 
+INPUT_ERRORS = (PriceDataError, nvda_earnings.EarningsDataError, CallTooEarlyError)
+"""What `load_inputs` raises when the data cannot be used."""
+
+
+def missing_input(prices: Path, context: Path, results: Path) -> str | None:
+    """Which data file is missing and which fetch makes it, or None if all exist."""
+    for path, what in (
+        (prices, "price"),
+        (context, "market context"),
+        (results, "results dates"),
+    ):
+        if not path.exists():
+            return f"{path} not found; run the {what} fetch first"
+    return None
+
+
+def load_inputs(
+    prices_path: Path, context_path: Path, results_path: Path, *, moment: datetime, min_rows: int
+) -> tuple[pd.DataFrame, Dataset]:
+    """Load and check the three data files; return the prices and the full dataset.
+
+    Raises one of `INPUT_ERRORS` if the data is stale, invalid or incomplete, or if
+    `moment` is before the last session's cut-off.
+    """
+    prices = load_csv(prices_path)
+    validate(prices, now=moment, min_rows=min_rows)
+    context = market_context.load_csv(context_path)
+    market_context.validate(context, now=moment, min_rows=min_rows)
+    publications = nvda_earnings.load_json(results_path)
+    nvda_earnings.validate(publications, now=moment)
+    return prices, build_context_dataset(prices, context, publications, as_of=moment)
+
+
 def _print(line: str) -> None:
     print(line, flush=True)
 
@@ -399,23 +432,15 @@ def main(
     parser.add_argument("--resamples", type=int, default=BootstrapConfig().n_resamples)
     args = parser.parse_args(argv)
     moment = now()
-    for path, what in (
-        (args.prices, "price"),
-        (args.context, "market context"),
-        (args.results, "results dates"),
-    ):
-        if not path.exists():
-            report(f"error: {path} not found; run the {what} fetch first")
-            return 2
+    missing = missing_input(args.prices, args.context, args.results)
+    if missing:
+        report(f"error: {missing}")
+        return 2
     try:
-        prices = load_csv(args.prices)
-        validate(prices, now=moment, min_rows=min_rows)
-        context = market_context.load_csv(args.context)
-        market_context.validate(context, now=moment, min_rows=min_rows)
-        publications = nvda_earnings.load_json(args.results)
-        nvda_earnings.validate(publications, now=moment)
-        dataset = build_context_dataset(prices, context, publications, as_of=moment)
-    except (PriceDataError, nvda_earnings.EarningsDataError, CallTooEarlyError) as exc:
+        _, dataset = load_inputs(
+            args.prices, args.context, args.results, moment=moment, min_rows=min_rows
+        )
+    except INPUT_ERRORS as exc:
         report(f"error: {exc}")
         return 1
     result = run_backtest(

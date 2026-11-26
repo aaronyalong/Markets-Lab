@@ -40,6 +40,15 @@ down the next day?
   and two models each give a range meant to hold the next day's return 80% of the
   time. The log records each range and, afterwards, only whether the return fell
   inside it, below it or above it.
+- A simulated paper strategy, scored like the rest: it is "Holding" for the next
+  session when at least 4 of the 6 direction models say up and the simple
+  volatility forecast is not above the 80th percentile of its past values, and
+  "In cash" otherwise. The rule and its scoring (Sharpe ratio against buy-and-hold,
+  with total return, worst drawdown and time in the market) were fixed before any
+  result was seen; the volatility gate was chosen knowing volatility is
+  predictable. It is an experiment, not a signal to follow.
+  `uv run python -m markets_lab.analysis.nvda.paper_strategy.backtest` writes
+  `reports/nvda_paper_strategy.json` (aggregates only).
 - "No model beats buy-and-hold" is a valid outcome and will be reported as such.
 
 ### NVIDIA headlines

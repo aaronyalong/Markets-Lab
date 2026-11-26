@@ -1,0 +1,324 @@
+{
+  "generated_at": "2026-11-26T06:30:46Z",
+  "symbol": "NVDA",
+  "data": {
+    "tested_sessions": 5541,
+    "first_tested_session": "2004-11-10",
+    "last_tested_session": "2026-11-18",
+    "share_majority_up": 0.561451,
+    "share_gate_open": 0.950009
+  },
+  "validation": {
+    "scheme": "walk-forward, expanding window",
+    "initial_train_sessions": 1260,
+    "refit_every_sessions": 21,
+    "folds": 264
+  },
+  "rule": {
+    "states": [
+      "Holding",
+      "In cash"
+    ],
+    "models": [
+      "logistic",
+      "xgboost",
+      "lstm",
+      "logistic_ctx",
+      "xgboost_ctx",
+      "lstm_ctx"
+    ],
+    "min_models_up": 4,
+    "gate_forecaster": "ewma_94",
+    "gate_percentile": 80.0,
+    "gate_history": "the training rows of each fold",
+    "gate_chosen_knowing_volatility_is_predictable": true
+  },
+  "scoring": {
+    "primary_measure": "sharpe_ratio",
+    "benchmark": "buy_and_hold",
+    "cost_bps": 5,
+    "interval": "paired moving-block bootstrap",
+    "confidence": 0.95,
+    "block_length_sessions": 21,
+    "resamples": 2000,
+    "seed": 20261119,
+    "also_reported": [
+      "total return",
+      "annualised return",
+      "worst drawdown",
+      "time in the market",
+      "trades"
+    ]
+  },
+  "cost_levels_bps": [
+    0,
+    5,
+    10
+  ],
+  "primary_cost_bps": 5,
+  "strategies": {
+    "paper_strategy": {
+      "time_in_market": 0.543765,
+      "trades": 1823,
+      "by_cost_bps": {
+        "0": {
+          "total_return": 273.378555,
+          "annualised_return": 0.290904,
+          "annualised_return_interval": [
+            0.133877,
+            0.472435
+          ],
+          "annualised_volatility": 0.331187,
+          "sharpe_ratio": 0.935208,
+          "sharpe_ratio_interval": [
+            0.54706,
+            1.32109
+          ],
+          "worst_drawdown": -0.499992
+        },
+        "5": {
+          "total_return": 109.253338,
+          "annualised_return": 0.238472,
+          "annualised_return_interval": [
+            0.087574,
+            0.412725
+          ],
+          "annualised_volatility": 0.331149,
+          "sharpe_ratio": 0.809969,
+          "sharpe_ratio_interval": [
+            0.420683,
+            1.198072
+          ],
+          "worst_drawdown": -0.515985
+        },
+        "10": {
+          "total_return": 43.282813,
+          "annualised_return": 0.188145,
+          "annualised_return_interval": [
+            0.043172,
+            0.355126
+          ],
+          "annualised_volatility": 0.331153,
+          "sharpe_ratio": 0.684615,
+          "sharpe_ratio_interval": [
+            0.292478,
+            1.075585
+          ],
+          "worst_drawdown": -0.531474
+        }
+      }
+    },
+    "buy_and_hold": {
+      "time_in_market": 1.0,
+      "trades": 1,
+      "by_cost_bps": {
+        "0": {
+          "total_return": 1079.772097,
+          "annualised_return": 0.373952,
+          "annualised_return_interval": [
+            0.124152,
+            0.655888
+          ],
+          "annualised_volatility": 0.482551,
+          "sharpe_ratio": 0.899847,
+          "sharpe_ratio_interval": [
+            0.485721,
+            1.307554
+          ],
+          "worst_drawdown": -0.850784
+        },
+        "5": {
+          "total_return": 1079.231711,
+          "annualised_return": 0.373921,
+          "annualised_return_interval": [
+            0.1241,
+            0.65585
+          ],
+          "annualised_volatility": 0.48255,
+          "sharpe_ratio": 0.8998,
+          "sharpe_ratio_interval": [
+            0.485631,
+            1.307454
+          ],
+          "worst_drawdown": -0.850784
+        },
+        "10": {
+          "total_return": 1078.691325,
+          "annualised_return": 0.37389,
+          "annualised_return_interval": [
+            0.124047,
+            0.655812
+          ],
+          "annualised_volatility": 0.48255,
+          "sharpe_ratio": 0.899754,
+          "sharpe_ratio_interval": [
+            0.48554,
+            1.307354
+          ],
+          "worst_drawdown": -0.850784
+        }
+      }
+    },
+    "majority_only": {
+      "time_in_market": 0.561451,
+      "trades": 1919,
+      "by_cost_bps": {
+        "0": {
+          "total_return": 685.032391,
+          "annualised_return": 0.345843,
+          "annualised_return_interval": [
+            0.179693,
+            0.54028
+          ],
+          "annualised_volatility": 0.347496,
+          "sharpe_ratio": 1.027093,
+          "sharpe_ratio_interval": [
+            0.65623,
+            1.402642
+          ],
+          "worst_drawdown": -0.58522
+        },
+        "5": {
+          "total_return": 261.745239,
+          "annualised_return": 0.288363,
+          "annualised_return_interval": [
+            0.129257,
+            0.474222
+          ],
+          "annualised_volatility": 0.347444,
+          "sharpe_ratio": 0.901458,
+          "sharpe_ratio_interval": [
+            0.527986,
+            1.275294
+          ],
+          "worst_drawdown": -0.602086
+        },
+        "10": {
+          "total_return": 99.581134,
+          "annualised_return": 0.233311,
+          "annualised_return_interval": [
+            0.082116,
+            0.41109
+          ],
+          "annualised_volatility": 0.347433,
+          "sharpe_ratio": 0.775693,
+          "sharpe_ratio_interval": [
+            0.401217,
+            1.150951
+          ],
+          "worst_drawdown": -0.618273
+        }
+      }
+    },
+    "gate_only": {
+      "time_in_market": 0.950009,
+      "trades": 61,
+      "by_cost_bps": {
+        "0": {
+          "total_return": 677.406536,
+          "annualised_return": 0.345159,
+          "annualised_return_interval": [
+            0.113596,
+            0.614494
+          ],
+          "annualised_volatility": 0.451403,
+          "sharpe_ratio": 0.882839,
+          "sharpe_ratio_interval": [
+            0.464405,
+            1.298739
+          ],
+          "worst_drawdown": -0.79519
+        },
+        "5": {
+          "total_return": 657.022478,
+          "annualised_return": 0.343294,
+          "annualised_return_interval": [
+            0.112049,
+            0.611857
+          ],
+          "annualised_volatility": 0.451408,
+          "sharpe_ratio": 0.879758,
+          "sharpe_ratio_interval": [
+            0.460979,
+            1.295634
+          ],
+          "worst_drawdown": -0.795803
+        },
+        "10": {
+          "total_return": 637.241155,
+          "annualised_return": 0.341431,
+          "annualised_return_interval": [
+            0.109993,
+            0.609224
+          ],
+          "annualised_volatility": 0.451415,
+          "sharpe_ratio": 0.876673,
+          "sharpe_ratio_interval": [
+            0.456939,
+            1.292978
+          ],
+          "worst_drawdown": -0.796415
+        }
+      }
+    }
+  },
+  "comparisons": [
+    {
+      "strategy": "paper_strategy",
+      "reference": "buy_and_hold",
+      "cost_bps": 5,
+      "sharpe_difference": -0.089831,
+      "sharpe_difference_interval": [
+        -0.391928,
+        0.210912
+      ],
+      "annualised_return_difference": -0.135449,
+      "annualised_return_difference_interval": [
+        -0.33229,
+        0.046259
+      ],
+      "verdict": "no detectable difference"
+    },
+    {
+      "strategy": "majority_only",
+      "reference": "buy_and_hold",
+      "cost_bps": 5,
+      "sharpe_difference": 0.001657,
+      "sharpe_difference_interval": [
+        -0.309562,
+        0.301353
+      ],
+      "annualised_return_difference": -0.085558,
+      "annualised_return_difference_interval": [
+        -0.283838,
+        0.10064
+      ],
+      "verdict": "no detectable difference"
+    },
+    {
+      "strategy": "gate_only",
+      "reference": "buy_and_hold",
+      "cost_bps": 5,
+      "sharpe_difference": -0.020042,
+      "sharpe_difference_interval": [
+        -0.117685,
+        0.070612
+      ],
+      "annualised_return_difference": -0.030627,
+      "annualised_return_difference_interval": [
+        -0.098688,
+        0.027226
+      ],
+      "verdict": "no detectable difference"
+    }
+  ],
+  "caveats": [
+    "Research only, not financial advice. A paper strategy: simulated, no money involved.",
+    "The volatility gate was chosen knowing that volatility is predictable (the one positive result of the volatility backtest), so this backtest flatters it. The live log is the real test.",
+    "None of the six models beat always calling up in the direction backtest.",
+    "Simulated returns assume a flat cost per trade, no slippage or taxes, and cash that earns no interest; the Sharpe ratio therefore uses a zero risk-free rate.",
+    "The two parts of the rule are compared with buy-and-hold as well, so some intervals may exclude zero by chance.",
+    "Worst drawdown and total return depend on the order of the days and have no interval."
+  ],
+  "finding": "Risk-adjusted return after 5 basis points per trade: Sharpe ratio 0.81 for the paper strategy against 0.90 for buy-and-hold, a difference of -0.09 (-0.39 to +0.21): no detectable difference."
+}
