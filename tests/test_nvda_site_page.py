@@ -296,6 +296,130 @@ class TestTomorrow:
         assert not re.search(r"\b(buy|sell|signal|recommend\w*)\b", text)
 
 
+def versus_always_up(**intervals: tuple[float, float]) -> dict[str, Any]:
+    """A report holding only each model's accuracy difference from always calling up."""
+    return {
+        "comparisons": [
+            {"predictor": name, "reference": "always_up", "accuracy_difference_interval": list(i)}
+            for name, i in intervals.items()
+        ]
+    }
+
+
+BEAT, SAME, WORSE = (0.01, 0.03), (-0.01, 0.01), (-0.03, -0.01)
+
+
+def three_models_on_monday() -> list[Record]:
+    """Monday's calls: two of three models say up; the baseline is not a model."""
+    return [
+        *log_records(),
+        call(MON, "xgboost", False, 0.44),
+        call(MON, "lstm", True, 0.60),
+    ]
+
+
+class TestStancePanel:
+    def test_counts_and_averages_the_models_only(self) -> None:
+        panel = site_page.stance_panel(three_models_on_monday(), versus_always_up())
+        text = text_of(panel)
+        assert "2 of 3 models say up" in text  # always_up's call is not counted
+        mean = (0.5312 + 0.44 + 0.60) / 3
+        assert f"{100 * mean:.0f}% their average probability of up" in text
+
+    def test_says_said_once_the_session_is_scored(self) -> None:
+        scored = [*log_records()[:5], call(FRI, "xgboost", True, 0.55), log_records()[5]]
+        text = text_of(site_page.stance_panel(scored, versus_always_up()))
+        assert "1 of 2 models said up" in text  # Friday's calls, scored by Monday's outcome
+
+    def test_no_panel_without_a_model_call(self) -> None:
+        assert site_page.stance_panel([], versus_always_up()) == ""
+        only_baseline = [call(THU, "always_up", True)]
+        assert site_page.stance_panel(only_baseline, versus_always_up()) == ""
+
+    def test_shows_the_simple_baselines_range_for_the_same_session_only(self) -> None:
+        same = [*three_models_on_monday(), ranged(MON, "ewma_94", -0.0558, 0.0616)]
+        text = text_of(site_page.stance_panel(same, versus_always_up()))
+        assert f"{MINUS}5.6% to +6.2%" in text
+        assert "the simple baseline's 80% range for the move, either way" in text
+        older = [*three_models_on_monday(), ranged(FRI, "ewma_94")]
+        assert "range" not in text_of(site_page.stance_panel(older, versus_always_up()))
+        other = [*three_models_on_monday(), ranged(MON, "har")]
+        assert "range" not in text_of(site_page.stance_panel(other, versus_always_up()))
+
+    def test_the_backtest_sentence_is_in_the_panel_in_full_text(self) -> None:
+        report = versus_always_up(logistic=WORSE, xgboost=SAME, lstm=SAME)
+        panel = site_page.stance_panel(three_models_on_monday(), report)
+        line = re.search(r'<p class="([^"]*)">([^<]*always calling up[^<]*)</p>', panel)
+        assert line is not None
+        assert line.group(1) == "stance-backtest"  # not muted, not small
+        assert line.group(2) == "In the backtest, none of these 3 models beat always calling up."
+
+    @pytest.mark.parametrize(
+        ("intervals", "expected"),
+        [
+            ({"a": SAME, "b": WORSE}, "In the backtest, none of these 2 models beat"),
+            ({"a": BEAT, "b": SAME, "c": SAME}, "In the backtest, 1 of these 3 models beat"),
+            ({"a": BEAT, "b": BEAT}, "In the backtest, all 2 of these models beat"),
+            ({"a": SAME}, "In the backtest, this model did not beat"),
+            ({"a": BEAT}, "In the backtest, this model beat"),
+        ],
+    )
+    def test_the_backtest_sentence_follows_the_intervals(
+        self, intervals: dict[str, tuple[float, float]], expected: str
+    ) -> None:
+        line = site_page.stance_backtest_line(list(intervals), versus_always_up(**intervals))
+        assert line == f"{expected} always calling up."
+
+    def test_models_without_a_backtest_are_counted_apart(self) -> None:
+        report = versus_always_up(a=SAME, b=SAME)
+        assert site_page.stance_backtest_line(["a", "b", "new"], report) == (
+            "In the backtest, none of these 2 models beat always calling up. "
+            "1 more has no backtest yet."
+        )
+        assert site_page.stance_backtest_line(["new"], report) == (
+            "None of these models has been through the backtest yet."
+        )
+
+    def test_nothing_in_it_suggests_an_action(self) -> None:
+        records = [*three_models_on_monday(), ranged(MON, "ewma_94")]
+        panel = site_page.stance_panel(records, versus_always_up(logistic=SAME))
+        assert not re.search(r'class="[^"]*\b(up|down|right|wrong)\b', panel)
+        assert "▲" not in panel and "▼" not in panel
+        assert "big-number" not in panel  # the count-up script would garble "2 of 3"
+        words = text_of(panel).lower()
+        for word in ("buy", "sell", "hold", "signal", "recommend", "should", "consider"):
+            assert not re.search(rf"\b{word}", words), word
+
+    def test_it_sits_under_the_heading_before_the_calls(self, report: dict[str, Any]) -> None:
+        fragment = tomorrow_fragment(three_models_on_monday(), report)
+        assert fragment.index("call-heading") < fragment.index("stance-panel")
+        assert fragment.index("stance-panel") < fragment.index("call-group")
+        assert "stance-panel" not in tomorrow_fragment(three_models_on_monday())
+        built = build_fragments(report, three_models_on_monday(), volatility=volatility_report())
+        assert "stance-panel" in built["tomorrow.md"]
+
+    def test_the_stylesheet_keeps_it_neutral_and_the_sentence_readable(self) -> None:
+        theme = (Path(__file__).parents[1] / "site" / "theme.scss").read_text()
+
+        def rule(selector: str) -> str:
+            found = re.search(rf"^{re.escape(selector)} \{{(.*?)^\}}", theme, re.M | re.S)
+            assert found is not None, selector
+            return found.group(1)
+
+        def size(block: str) -> float:
+            found = re.search(r"font-size: ([\d.]+)rem", block)
+            assert found is not None
+            return float(found.group(1))
+
+        sentence = rule(".stance-backtest")
+        assert "color: $lab-text" in sentence
+        assert size(sentence) >= size(rule(".stance-tile p")) >= 1.0
+        for selector in (".stance-panel", ".stance-number", ".stance-backtest"):
+            block = rule(selector)
+            for colour in ("$lab-green", "$lab-red", "$lab-accent", "$lab-lime", "$lab-muted"):
+                assert colour not in block, (selector, colour)
+
+
 class TestStatusStrip:
     def test_before_the_log_starts(self) -> None:
         text = text_of(status_fragment([]))
@@ -640,7 +764,8 @@ class TestWhatIsPublished:
         self, report: dict[str, Any], volatility: dict[str, Any]
     ) -> None:
         # The nightly job writes range forecasts and their outcomes into the same
-        # log. They have their own fragments and must change nothing in the others.
+        # log. They have their own fragments and must change nothing in the others,
+        # except the stance panel's one tile showing the simple baseline's range.
         with_ranges = [
             *log_records()[:2],
             RangeForecast(at(f"{THU} 18:00"), THU, "ewma_94", 0.8, -0.03, 0.04),
@@ -653,8 +778,15 @@ class TestWhatIsPublished:
         plain = build_fragments(report, log_records(), volatility=volatility)
         about_direction = [name for name in plain if not name.startswith("range")]
         assert len(about_direction) == 6
+        range_tile = (
+            r'<div class="stance-tile"><div class="stance-number">[^<]*</div>'
+            r"<p>the simple baseline&#x27;s 80% range[^<]*</p></div>"
+        )
+        assert len(re.findall(range_tile, mixed["tomorrow.md"])) == 1
+        assert re.sub(range_tile, "", mixed["tomorrow.md"]) == plain["tomorrow.md"]
         for name in about_direction:
-            assert mixed[name] == plain[name]
+            if name != "tomorrow.md":
+                assert mixed[name] == plain[name]
         assert mixed["range.md"] != plain["range.md"]
 
     def test_fragments_are_raw_html_blocks(

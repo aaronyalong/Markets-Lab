@@ -762,6 +762,57 @@ a:hover {
   margin-bottom: 1.1rem;
 }
 
+// Where the models stand: a count, an average and the range, with the backtest
+// sentence under them. Deliberately neutral: no green or red (they mean direction),
+// no accent border, no arrows. The backtest sentence is full text colour and a
+// little larger and bolder than the tile labels, so it reads with the count.
+.stance-panel {
+  padding: 1.2rem 1.4rem;
+  margin-bottom: 1.4rem;
+  border: 1px solid $lab-border;
+  border-radius: 16px;
+  background: $lab-panel;
+  color: $lab-text;
+}
+
+.stance-label {
+  margin: 0 0 0.8rem;
+  font-family: $font-family-monospace;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: $lab-muted;
+}
+
+.stance-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 1rem 1.5rem;
+}
+
+.stance-tile p {
+  margin: 0.25rem 0 0;
+  font-size: 1.05rem;
+}
+
+.stance-number {
+  font-family: $font-family-monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: clamp(1.5rem, 4vw, 2.1rem);
+  font-weight: 700;
+  line-height: 1.15;
+  color: $lab-text;
+}
+
+.stance-backtest {
+  margin: 1.1rem 0 0;
+  padding-top: 0.9rem;
+  border-top: 1px solid $lab-border;
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: $lab-text;
+}
+
 // Models, then baselines, each under its own label. The page builder sets --cols
 // to a number that divides the cards evenly; cards on a short last row still
 // grow to fill it, so none is left stranded.

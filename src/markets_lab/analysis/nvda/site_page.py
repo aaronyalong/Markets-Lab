@@ -246,11 +246,100 @@ def _was(k: int) -> str:
 # ---------------------------------------------------------------------- fragments
 
 
-def tomorrow_fragment(records: Sequence[Record]) -> str:
+def stance_panel(records: Sequence[Record], report: Mapping[str, Any]) -> str:
+    """Where the models stand on the latest session, with the backtest beside it.
+
+    Neutral by design: a count and an average, no colour, no arrows and no word
+    that suggests doing anything. The backtest sentence is set as large and as
+    bright as the count, so the one cannot be read without the other. Empty when
+    no model has called the latest session.
+    """
+    scored = scored_predictions(records)
+    if scored.empty:
+        return ""
+    latest = max(scored["based_on_session"])
+    calls = scored[scored["based_on_session"] == latest]
+    calls = calls[calls["model"].map(kind_of) == "model"]
+    if calls.empty:
+        return ""
+    pending = bool(calls["correct"].isna().all())
+    n = len(calls)
+    up = int(calls["predicted_up"].astype(bool).sum())
+    say = "say" if pending else "said"
+    tiles = [
+        (f"{up} of {n}", f"models {say} up"),
+        (
+            f"{100 * float(calls['probability_up'].mean()):.0f}%",
+            "their average probability of up",
+        ),
+    ]
+    ranges = scored_ranges(records)
+    if not ranges.empty:
+        headline = ranges[
+            (ranges["model"] == HEADLINE_FORECASTER) & (ranges["based_on_session"] == latest)
+        ]
+        if not headline.empty:
+            row = headline.iloc[0]
+            tiles.append(
+                (
+                    _range_text(row["lower_return"], row["upper_return"]),
+                    f"the simple baseline's {float(row['level']):.0%} range for the move, "
+                    "either way",
+                )
+            )
+    tile_markup = "".join(
+        f'<div class="stance-tile"><div class="stance-number">{value}</div>'
+        f"<p>{html.escape(label)}</p></div>"
+        for value, label in tiles
+    )
+    backtest_line = stance_backtest_line(list(calls["model"]), report)
+    return (
+        '<div class="stance-panel">'
+        '<p class="stance-label">Where the models stand</p>'
+        f'<div class="stance-grid">{tile_markup}</div>'
+        f'<p class="stance-backtest">{html.escape(backtest_line)}</p>'
+        "</div>"
+    )
+
+
+def stance_backtest_line(models: Sequence[str], report: Mapping[str, Any]) -> str:
+    """What the backtest says about these models against always calling up.
+
+    A model "beat" it only if the whole 95% interval of the accuracy difference is
+    above zero, as in `findings`.
+    """
+    versus_hold = {
+        row["predictor"]: row
+        for row in report["comparisons"]
+        if row["reference"] == BUY_AND_HOLD and row["predictor"] in models
+    }
+    tested = [m for m in models if m in versus_hold]
+    untested = len(models) - len(tested)
+    if not tested:
+        return "None of these models has been through the backtest yet."
+    n = len(tested)
+    beat = sum(1 for m in tested if versus_hold[m]["accuracy_difference_interval"][0] > 0)
+    if n == 1:
+        subject = "this model beat" if beat else "this model did not beat"
+    elif beat == 0:
+        subject = f"none of these {n} models beat"
+    elif beat == n:
+        subject = f"all {n} of these models beat"
+    else:
+        subject = f"{beat} of these {n} models beat"
+    sentence = f"In the backtest, {subject} always calling up."
+    if untested:
+        has = "has" if untested == 1 else "have"
+        sentence += f" {untested} more {has} no backtest yet."
+    return sentence
+
+
+def tomorrow_fragment(records: Sequence[Record], report: Mapping[str, Any] | None = None) -> str:
     """The latest call from each predictor, labelled as an experiment.
 
     Models and baselines are shown as two labelled groups, models first. The
     "experiment, not advice" label sits in the heading row, beside the calls.
+    Given the backtest report, the stance panel comes first, under the heading.
     """
     scored = scored_predictions(records)
     if scored.empty:
@@ -284,9 +373,10 @@ def tomorrow_fragment(records: Sequence[Record]) -> str:
         for title, aside, members in groups
         if members
     ]
+    stance = stance_panel(records, report) if report is not None else ""
     return _raw(
         f'<div class="call-head"><p class="call-heading">{heading}</p>{ADVICE_TAG}</div>{sub}'
-        f"{''.join(sections)}"
+        f"{stance}{''.join(sections)}"
         f'<p class="muted small">{html.escape(note)} An experiment, not advice.</p>'
     )
 
@@ -860,7 +950,7 @@ def build_fragments(
         "plotly.md": plotly_loader_fragment(),
         "status.md": status_fragment(records),
         "news.md": news_fragment(news),
-        "tomorrow.md": tomorrow_fragment(records),
+        "tomorrow.md": tomorrow_fragment(records, report),
         "range.md": range_fragment(records, volatility),
         "track_record.md": track_record_fragment(records),
         "range_record.md": range_record_fragment(records),
