@@ -131,7 +131,13 @@ BASELINE_NAMES = frozenset(b.name for b in default_baselines())
 TEXT, MUTED, BORDER, PANEL = "#e9edf3", "#94a0b4", "#1f2630", "#0e1217"
 LIME, AMBER = "#9be564", "#ffb648"
 MODEL_COLOURS = (LIME, AMBER, TEXT, "#ff9ecb", "#d9c27a")
-BASELINE_COLOURS = ("#8793a6", "#6c7789", "#566070")
+BASELINE_COLOURS = ("#aab4c4", "#8793a6", "#75829a")
+# The baselines are all grey, so each also gets a line pattern of its own. Models
+# are solid ("dash" for a context twin) and carry point markers; baselines do not.
+BASELINE_DASHES = ("solid", "dot", "dashdot")
+THE_BAR_TO_BEAT = "the bar to beat"
+# How each Plotly line pattern is drawn in the legend's own small pictures.
+SWATCH_DASHES = {"solid": "", "dot": "2 3", "dash": "7 4", "dashdot": "7 3 2 3"}
 CHART_FONT = "IBM Plex Sans, system-ui, sans-serif"
 
 
@@ -701,14 +707,24 @@ def track_record_fragment(records: Sequence[Record]) -> str:
         elif with_shares:
             cells += [_not_yet("calls"), "—"]
         body.append(cells)
-    table = _table(columns, body)
+    table = _table(columns, body, compact=True)
     series = cumulative_scores(scored)
     chart = (
-        _figure_html(cumulative_figure(series), "track-record-chart")
+        _track_record_chart(series)
         if any(len(points[1]) for points in series.values())
         else '<div class="panel muted">The chart appears once the first calls are scored.</div>'
     )
     return _raw(f'<p class="record-caveat">{html.escape(intro)}</p>{table}{chart}')
+
+
+def _track_record_chart(series: Mapping[str, tuple[list[date], list[int]]]) -> str:
+    figure = cumulative_figure(series)
+    return _figure_html(
+        figure,
+        "track-record-chart",
+        caption="Right calls minus wrong calls, added up session by session",
+        legend=chart_legend(figure),
+    )
 
 
 def _counts_only_note(who: str, what: str) -> str:
@@ -775,10 +791,13 @@ def backtest_fragment(report: Mapping[str, Any]) -> str:
         ),
         rows,
     )
+    chart = _figure_html(
+        accuracy_figure(report), "backtest-accuracy-chart", caption=ACCURACY_CAPTION
+    )
     return _raw(
         f'<div class="stat-grid">{tiles}</div>'
         f'<ul class="findings">{points}</ul>'
-        f"{_figure_html(accuracy_figure(report), 'backtest-accuracy-chart')}"
+        f"{chart}"
         f"{table}"
         '<p class="muted small">Ranges in brackets are 95% intervals. Simulated returns are '
         "summary figures from applying each rule to history; they are not real results.</p>"
@@ -1016,7 +1035,9 @@ def range_record_fragment(records: Sequence[Record]) -> str:
             )
         )
     columns += [Column("Missed below / above"), Column("Average width")]
-    return _raw(f'<p class="record-caveat">{html.escape(intro)}</p>{_table(columns, body)}')
+    return _raw(
+        f'<p class="record-caveat">{html.escape(intro)}</p>{_table(columns, body, compact=True)}'
+    )
 
 
 def range_backtest_fragment(report: Mapping[str, Any]) -> str:
@@ -1068,10 +1089,11 @@ def range_backtest_fragment(report: Mapping[str, Any]) -> str:
         ),
         rows,
     )
+    chart = _figure_html(coverage_figure(report), "range-coverage-chart", caption=COVERAGE_CAPTION)
     return _raw(
         f'<div class="stat-grid">{tile_markup}</div>'
         f'<ul class="findings">{points}</ul>'
-        f"{_figure_html(coverage_figure(report), 'range-coverage-chart')}"
+        f"{chart}"
         f"{table}"
         '<p class="muted small">Ranges in brackets are 95% intervals. A narrower range is '
         "better only if it still holds the share it was built for.</p>"
@@ -1250,6 +1272,7 @@ def paper_record_fragment(records: Sequence[Record]) -> str:
     table = _table(
         columns,
         [row(PAPER_STRATEGY, record.right_side), row(PAPER_BENCHMARK, record.went_up)],
+        compact=True,
     )
     missed = f"Sessions with no entry: {record.missed}."
     if record.missed:
@@ -1516,7 +1539,7 @@ def cumulative_figure(series: Mapping[str, tuple[list[date], list[int]]]) -> go.
                 line={
                     "color": BASELINE_COLOURS[position % len(BASELINE_COLOURS)],
                     "width": 2,
-                    "dash": "dot",
+                    "dash": BASELINE_DASHES[position % len(BASELINE_DASHES)],
                 },
             )
         )
@@ -1543,8 +1566,10 @@ def cumulative_figure(series: Mapping[str, tuple[list[date], list[int]]]) -> go.
             )
         )
     figure.add_hline(y=0, line={"color": BORDER, "width": 1})
-    _style(figure, height=380)
-    figure.update_yaxes(title_text="Right calls minus wrong calls")
+    _style(figure, height=340)
+    # The legend is drawn by the page (`chart_legend`), where it can wrap on a phone
+    # and show each line's pattern; the caption says what the axis measures.
+    figure.update_layout(showlegend=False, margin={"t": 16})
     # Sessions are days: label them by date, never by hour, and leave out weekends.
     # Over a short span Plotly would otherwise put a tick every few hours.
     days = [day for sessions, _ in series.values() for day in sessions]
@@ -1559,6 +1584,8 @@ def cumulative_figure(series: Mapping[str, tuple[list[date], list[int]]]) -> go.
     return figure
 
 
+ACCURACY_CAPTION = "Accuracy in the backtest, with its 95% interval"
+COVERAGE_CAPTION = "Share of outcomes inside the range in the backtest, with its 95% interval"
 SHORT_SPAN_DAYS = 21
 """Up to about three weeks of sessions, the chart gets one tick per day."""
 DAY_MS = 86_400_000
@@ -1606,10 +1633,7 @@ def coverage_figure(report: Mapping[str, Any]) -> go.Figure:
         annotation_font={"color": AMBER},
     )
     _style(figure, height=90 + 46 * len(names))
-    figure.update_xaxes(
-        title_text="Share of outcomes inside the range in the backtest (%), with 95% interval",
-        ticksuffix="%",
-    )
+    figure.update_xaxes(ticksuffix="%")
     return figure
 
 
@@ -1651,9 +1675,7 @@ def accuracy_figure(report: Mapping[str, Any]) -> go.Figure:
     )
     figure.add_vline(x=50, line={"color": BORDER, "width": 1})
     _style(figure, height=90 + 46 * len(names))
-    figure.update_xaxes(
-        title_text="Accuracy in the backtest (%), with 95% interval", ticksuffix="%"
-    )
+    figure.update_xaxes(ticksuffix="%")
     return figure
 
 
@@ -1671,13 +1693,52 @@ def _style(figure: go.Figure, *, height: int) -> None:
     figure.update_yaxes(gridcolor=BORDER, zeroline=False, linecolor=BORDER, automargin=True)
 
 
-def _figure_html(figure: go.Figure, element_id: str) -> str:
-    return figure.to_html(
+def _figure_html(figure: go.Figure, element_id: str, *, caption: str, legend: str = "") -> str:
+    """The chart with its caption above it and, if given, its legend below.
+
+    The caption says what the chart measures. It is ordinary text, so on a phone it
+    wraps; an axis title drawn inside the chart would be cut off there.
+    """
+    plot = figure.to_html(
         full_html=False,
         include_plotlyjs=False,
         div_id=element_id,
         config={"displayModeBar": False, "responsive": True},
     )
+    return (
+        f'<figure class="chart"><figcaption class="chart-caption">{html.escape(caption)}'
+        f"</figcaption>{plot}{legend}</figure>"
+    )
+
+
+def chart_legend(figure: go.Figure) -> str:
+    """A legend for a line chart, read from the figure's own traces so it cannot
+    disagree with them: each line's colour and pattern, a dot if it has markers,
+    and its name. Always calling up is marked as the bar to beat."""
+    entries = []
+    for trace in figure.to_dict()["data"]:
+        line: Mapping[str, Any] = trace["line"]
+        colour, name = str(line["color"]), str(trace["name"])
+        pattern = SWATCH_DASHES[line.get("dash") or "solid"]
+        dashes = f' stroke-dasharray="{pattern}"' if pattern else ""
+        dot = (
+            f'<circle cx="17" cy="5" r="2.8" fill="{colour}"/>'
+            if "markers" in trace.get("mode", "")
+            else ""
+        )
+        note = (
+            f' <span class="chart-legend-note">{THE_BAR_TO_BEAT}</span>'
+            if name == display_name(BUY_AND_HOLD)
+            else ""
+        )
+        entries.append(
+            '<li><svg class="chart-swatch" viewBox="0 0 34 10" width="34" height="10" '
+            'aria-hidden="true" focusable="false">'
+            f'<line x1="1" y1="5" x2="33" y2="5" stroke="{colour}" '
+            f'stroke-width="{line["width"]}"{dashes}/>{dot}</svg>'
+            f"<span>{html.escape(name)}{note}</span></li>"
+        )
+    return f'<ul class="chart-legend" aria-label="Lines in the chart">{"".join(entries)}</ul>'
 
 
 # ------------------------------------------------------------------------ helpers
@@ -1700,12 +1761,15 @@ class Column:
         return self.label or self.heading
 
 
-def _table(columns: Sequence[Column], rows: Sequence[Sequence[str]]) -> str:
+def _table(
+    columns: Sequence[Column], rows: Sequence[Sequence[str]], *, compact: bool = False
+) -> str:
     """A results table from ready-made cell markup, one row per sequence.
 
     Every cell after the first carries its column's label as `data-label`, so that
     on a phone the stylesheet can show each row as a card: the first cell as its
-    title, then one labelled line per value.
+    title, then one labelled line per value. `compact` is for tables of short
+    values with many rows: on a phone the labelled values share a line.
     """
     head = "".join(f"<th>{column.heading}</th>" for column in columns)
     body = "".join(
@@ -1717,7 +1781,8 @@ def _table(columns: Sequence[Column], rows: Sequence[Sequence[str]]) -> str:
         + "</tr>"
         for row in rows
     )
-    return f'<table class="lab-table"><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>'
+    classes = "lab-table compact" if compact else "lab-table"
+    return f'<table class="{classes}"><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>'
 
 
 def _cell(column: Column, value: str, *, labelled: bool) -> str:

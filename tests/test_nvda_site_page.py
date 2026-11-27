@@ -220,7 +220,7 @@ def table_rows(fragment: str) -> dict[str, list[str]]:
 def table_labels(fragment: str) -> list[tuple[list[str], list[list[str | None]]]]:
     """For every table: its headings' text, and each body row's phone labels."""
     tables = []
-    for table in re.findall(r'<table class="lab-table">(.*?)</table>', fragment, re.DOTALL):
+    for table in re.findall(r'<table class="lab-table[^"]*">(.*?)</table>', fragment, re.DOTALL):
         headings = [text_of(h).strip() for h in re.findall(r"<th>(.*?)</th>", table, re.DOTALL)]
         rows = [
             [
@@ -799,6 +799,83 @@ class TestTrackRecord:
         # Three pairs, three colours: no two pairs share one.
         assert len({colour for colour, _ in lines.values()}) == 3
 
+    def nine_lines(self) -> Any:
+        names = ("always_up", "persistence", "ma_200", "logistic", "xgboost", "lstm")
+        records = [
+            *(call(THU, name, True, None if name in names[:3] else 0.6) for name in names),
+            *(call(THU, f"{name}_ctx", True, 0.6) for name in names[3:]),
+            went(FRI, THU, True),
+        ]
+        return site_page.cumulative_figure(cumulative_scores(scored_predictions(records)))
+
+    def test_every_line_can_be_told_apart_without_relying_on_colour(self) -> None:
+        # The three baselines used to be three near-identical grey dotted lines.
+        traces = self.nine_lines().to_dict()["data"]
+        assert len(traces) == 9
+        looks = [
+            (trace["line"]["color"], trace["line"]["dash"], "markers" in trace["mode"])
+            for trace in traces
+        ]
+        assert len(set(looks)) == 9
+        baselines = {trace["name"]: trace for trace in traces[:3]}
+        assert list(baselines) == ["Always up", "Persistence", "200-day average rule"]
+        patterns = [trace["line"]["dash"] for trace in baselines.values()]
+        assert patterns == ["solid", "dot", "dashdot"] and len(set(patterns)) == 3
+        # Baselines are plain lines; models carry point markers.
+        assert all(trace["mode"] == "lines" for trace in traces[:3])
+        assert all(trace["mode"] == "lines+markers" for trace in traces[3:])
+
+    def test_the_legend_is_read_from_the_chart_and_marks_the_bar_to_beat(self) -> None:
+        figure = self.nine_lines()
+        legend = site_page.chart_legend(figure)
+        entries = re.findall(r"<li>(.*?)</li>", legend)
+        traces = figure.to_dict()["data"]
+        assert len(entries) == len(traces) == 9
+        for entry, trace in zip(entries, traces, strict=True):
+            assert html.escape(trace["name"]) in entry
+            assert f'stroke="{trace["line"]["color"]}"' in entry
+            pattern = site_page.SWATCH_DASHES[trace["line"]["dash"]]
+            assert (f'stroke-dasharray="{pattern}"' in entry) == bool(pattern)
+            assert ("<circle" in entry) == ("markers" in trace["mode"])
+        assert text_of(entries[0]).split() == ["Always", "up", "the", "bar", "to", "beat"]
+        assert sum("the bar to beat" in entry for entry in entries) == 1
+        # Every pattern the chart uses has a picture, and no two look the same.
+        used = {trace["line"]["dash"] for trace in traces}
+        assert used <= set(site_page.SWATCH_DASHES)
+        assert len(set(site_page.SWATCH_DASHES.values())) == len(site_page.SWATCH_DASHES)
+        assert figure.to_dict()["layout"]["showlegend"] is False
+
+    def test_what_a_chart_measures_is_said_in_text_that_can_wrap(
+        self, report: dict[str, Any], volatility: dict[str, Any]
+    ) -> None:
+        # An axis title drawn inside the chart is cut off on a phone.
+        fragments = {
+            "Right calls minus wrong calls, added up session by session": track_record_fragment(
+                log_records()
+            ),
+            site_page.ACCURACY_CAPTION: backtest_fragment(report),
+            site_page.COVERAGE_CAPTION: site_page.range_backtest_fragment(volatility),
+        }
+        for caption, fragment in fragments.items():
+            assert (
+                f'<figure class="chart"><figcaption class="chart-caption">{caption}</figcaption>'
+            ) in fragment
+        figures = (
+            site_page.cumulative_figure(cumulative_scores(scored_predictions(log_records()))),
+            site_page.accuracy_figure(report),
+            site_page.coverage_figure(volatility),
+        )
+        for figure in figures:
+            layout = figure.to_dict()["layout"]
+            for axis in ("xaxis", "yaxis"):
+                assert "title" not in layout.get(axis, {}), axis
+
+    def test_the_track_record_chart_has_its_legend_under_it(self) -> None:
+        fragment = track_record_fragment(log_records())
+        chart = fragment[fragment.index('<figure class="chart">') : fragment.index("</figure>")]
+        assert chart.index('id="track-record-chart"') < chart.index('<ul class="chart-legend"')
+        assert "Always up" in text_of(chart[chart.index('<ul class="chart-legend"') :])
+
     def test_a_context_model_without_its_twin_gets_a_colour_of_its_own(self) -> None:
         records = [
             call(THU, "logistic", True, 0.6),
@@ -1365,6 +1442,25 @@ class TestPhoneTables:
         phone = theme.split("@media (max-width: 40rem)")[1]
         assert "content: attr(data-label)" in phone
         assert "thead {" in phone and "clip-path: inset(50%)" in phone
+
+    def test_the_live_record_tables_are_compact_on_phones(
+        self, report: dict[str, Any], volatility: dict[str, Any]
+    ) -> None:
+        # Nine models at one line per value made the record very long on a phone.
+        compact = (
+            track_record_fragment(log_records()),
+            site_page.range_record_fragment(range_records()),
+            site_page.paper_record_fragment(paper_log()),
+        )
+        for fragment in compact:
+            assert '<table class="lab-table compact">' in fragment
+        # Tables whose cells hold a value and its interval keep one line per value.
+        for fragment in (backtest_fragment(report), site_page.range_backtest_fragment(volatility)):
+            assert '<table class="lab-table">' in fragment
+        theme = (Path(__file__).parents[1] / "site" / "theme.scss").read_text()
+        phone = theme.split("@media (max-width: 40rem)")[1]
+        rules = phone[phone.index(".lab-table.compact {") :]
+        assert "flex-wrap: wrap" in rules and "flex: 0 0 100%" in rules
 
 
 def six(day: date, up: int, *, without: str | None = None) -> list[Record]:

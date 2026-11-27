@@ -456,3 +456,14 @@ def test_the_built_nvidia_page_says_experiment_not_advice_once() -> None:
     assert visible.count("not advice") == 1
     assert visible.count("advice") == 2
     assert visible.index("an experiment, not advice.") < visible.index("calls for")
+
+
+def test_running_text_has_one_reading_width() -> None:
+    # Introductions ran the full 72rem while the Method section was capped.
+    theme = (SITE / "theme.scss").read_text()
+    assert "$reading-width: 46rem;" in theme
+    assert theme.count("max-width: $reading-width;") == 2
+    band = theme[theme.index(".band > p,") :].split("}", 1)[0]
+    assert ".band section > p {" in band and "max-width: $reading-width;" in band
+    prose = theme[theme.index(".prose {") :].split("\n}\n", 1)[0]
+    assert "max-width: $reading-width;" in prose

@@ -45,6 +45,8 @@ $footer-fg: $lab-muted;
 /*-- scss:rules --*/
 
 $wide: 72rem;
+// The longest line of running text, here and in the Method section.
+$reading-width: 46rem;
 $accent-gradient: linear-gradient(100deg, $lab-accent 0%, $lab-lime 50%, $lab-mint 100%);
 
 body {
@@ -775,8 +777,16 @@ a:hover {
 
   p,
   ul {
-    max-width: 46rem;
+    max-width: $reading-width;
   }
+}
+
+// One reading width for running text. Paragraphs that stand on their own in a
+// band (introductions, caveats, notes under a table) are kept to it; tables,
+// tiles and boxes still use the full width, and text inside a box follows its box.
+.band > p,
+.band section > p {
+  max-width: $reading-width;
 }
 
 // TradingView chart
@@ -1096,6 +1106,47 @@ a:hover {
   margin: 0.5rem 0 1rem;
 }
 
+// A chart with its caption above and, for line charts, its legend below. Both are
+// ordinary text so they wrap on a phone, where text drawn inside the chart is cut.
+.chart {
+  margin: 1.5rem 0 1.25rem;
+
+  .plotly-graph-div {
+    margin: 0;
+  }
+}
+
+.chart-caption {
+  margin: 0 0 0.25rem;
+  font-size: 0.95rem;
+  color: $lab-text;
+}
+
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 1.4rem;
+  margin: 0.4rem 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.86rem;
+  color: $lab-text;
+
+  li {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .chart-swatch {
+    flex: none;
+  }
+
+  .chart-legend-note {
+    color: $lab-muted;
+  }
+}
+
 @media (max-width: 62rem) {
   .stat-grid {
     grid-template-columns: 1fr;
@@ -1221,6 +1272,41 @@ a:hover {
 
     tbody tr:hover td {
       background: none;
+    }
+  }
+
+  // Tables of short values with many rows: the name on one line, then the
+  // labelled values side by side, instead of one line per value.
+  .lab-table.compact {
+    tr {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 0.15rem 1.1rem;
+      margin-bottom: 0.5rem;
+      padding: 0.65rem 1rem 0.7rem;
+    }
+
+    td:first-child {
+      flex: 0 0 100%;
+      padding-bottom: 0.2rem;
+    }
+
+    td[data-label] {
+      display: flex;
+      align-items: baseline;
+      gap: 0.4rem;
+      padding: 0;
+      border-top: 0;
+      text-align: left;
+      font-size: 0.92rem;
+    }
+
+    td[data-label]::before {
+      float: none;
+      margin-right: 0;
+      line-height: inherit;
+      font-size: 0.68rem;
     }
   }
 }
