@@ -7,12 +7,15 @@ been rendered, the built pages are checked for the disclaimer too.
 
 from __future__ import annotations
 
+import html
+import json
 import re
 from pathlib import Path
 
 import pytest
 
 from markets_lab import site_brand
+from markets_lab.analysis.nvda import site_page
 
 SITE = Path(__file__).resolve().parents[1] / "site"
 CONFIG = SITE / "_quarto.yml"
@@ -223,6 +226,47 @@ def test_home_has_one_live_card_and_one_coming_soon() -> None:
     assert "Coming soon" in cards[1]
     assert ".coming-soon" in cards[1].splitlines()[0]
     assert ".qmd" not in cards[1], "a coming-soon card must not link anywhere"
+
+
+def test_the_live_card_states_its_finding_from_the_generated_line() -> None:
+    # The sentence is written by site_page.home_finding from the backtest report,
+    # never typed into the page, so it cannot disagree with the NVIDIA page.
+    card = home_cards()[0]
+    assert "{{< include /_generated/home_finding.md >}}" in card
+    assert "models beat" not in card and "In the backtest" not in card
+    assert "_generated" not in home_cards()[1]
+    theme = (SITE / "theme.scss").read_text()
+    rule = theme[theme.index(".lab-card .card-finding {") :].split("}", 1)[0]
+    assert "color: $lab-text;" in rule
+    for colour in ("$lab-green", "$lab-red", "$lab-accent", "$lab-lime"):
+        assert colour not in rule
+
+
+@pytest.mark.skipif(not BUILT.is_dir(), reason="site has not been rendered")
+def test_the_built_home_page_shows_the_finding_the_nvidia_page_shows() -> None:
+    report = json.loads((SITE.parent / "reports" / "nvda_backtest.json").read_text())
+    sentence = site_page.home_finding(report)
+    home = (BUILT / "index.html").read_text()
+    assert f'<p class="card-finding">{html.escape(sentence)}</p>' in home
+    tile = site_page.direction_summary(report)
+    assert tile is not None
+    page = (BUILT / "experiments" / "nvidia.html").read_text()
+    assert f'<div class="summary-number">{tile.number}</div>' in page
+
+
+def test_the_notice_covers_everything_the_page_publishes() -> None:
+    page = " ".join((SITE / "experiments" / "nvidia.qmd").read_text().split())
+    assert (
+        "The calls, the range and the paper strategy below are published so they can be "
+        "scored, not so they can be followed."
+    ) in page
+
+
+def test_footer_links_look_like_links() -> None:
+    theme = (SITE / "theme.scss").read_text()
+    footer = theme[theme.index(".nav-footer {") :]
+    rule = footer[footer.index(".nav-footer-center a {") :].split("}", 1)[0]
+    assert "text-decoration: underline;" in rule and "color: $lab-text;" in rule
 
 
 def test_work_that_has_not_started_shows_no_numbers() -> None:

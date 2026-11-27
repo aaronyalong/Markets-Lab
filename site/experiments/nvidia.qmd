@@ -16,8 +16,8 @@ down the next day?
 
 ::: {.notice}
 **An experiment, not advice.** Nothing on this page is a recommendation to buy or
-sell anything. The calls below are published so they can be scored, not so they can
-be followed.
+sell anything. The calls, the range and the paper strategy below are published so
+they can be scored, not so they can be followed.
 :::
 
 {{< include /_generated/summary.md >}}

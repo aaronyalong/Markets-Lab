@@ -588,12 +588,50 @@ class TestSummaryTiles:
         for colour in ("$lab-green", "$lab-red", "$lab-accent", "$lab-lime"):
             assert colour not in found.group(1), colour
 
+    def test_the_home_page_line_follows_the_same_count(self, report: dict[str, Any]) -> None:
+        # My condition (2026-11-26): the home card's line is generated from the report.
+        backtest, _, _ = real_reports()
+        assert (
+            site_page.home_finding(backtest)
+            == "In the backtest, none of the 6 models beat always calling up."
+        )
+        lost = with_intervals(report, (-0.02, 0.01), (-0.1, 0.1))
+        won = with_intervals(report, (0.01, 0.03), (0.01, 0.1))
+        assert site_page.home_finding(lost) == (
+            "In the backtest, the one model did not beat always calling up."
+        )
+        assert site_page.home_finding(won) == (
+            "In the backtest, the one model beat always calling up."
+        )
+        several = copy.deepcopy(backtest)
+        for row in several["comparisons"]:
+            if row["reference"] == "always_up" and row["predictor"] in ("lstm", "xgboost"):
+                row["accuracy_difference_interval"] = [0.01, 0.03]
+        assert site_page.home_finding(several) == (
+            "In the backtest, two of the 6 models beat always calling up."
+        )
+        tile = site_page.direction_summary(several)
+        assert tile is not None and tile.number == "2 of 6"
+        for row in several["comparisons"]:
+            if row["reference"] == "always_up":
+                row["accuracy_difference_interval"] = [0.01, 0.03]
+        assert site_page.home_finding(several) == (
+            "In the backtest, all 6 models beat always calling up."
+        )
+        fragment = site_page.home_finding_fragment(backtest)
+        assert (
+            '<p class="card-finding">In the backtest, none of the 6 models beat always '
+            "calling up.</p>"
+        ) in fragment
+        no_action_words(fragment)
+
     def test_it_is_built_with_the_page(
         self, report: dict[str, Any], volatility: dict[str, Any]
     ) -> None:
         built = build_fragments(report, log_records(), volatility=volatility)
         assert built["summary.md"] == site_page.summary_fragment(report, volatility)
         assert built["summary.md"].count('class="summary-tile"') == 2  # no paper report given
+        assert built["home_finding.md"] == site_page.home_finding_fragment(report)
 
 
 class TestStatusStrip:
@@ -1079,7 +1117,7 @@ class TestWhatIsPublished:
         mixed = build_fragments(report, with_ranges, volatility=volatility)
         plain = build_fragments(report, log_records(), volatility=volatility)
         about_direction = [name for name in plain if not name.startswith("range")]
-        assert len(about_direction) == 7  # the summary is built from reports only
+        assert len(about_direction) == 8  # two of them are built from reports only
         range_tile = (
             r'<div class="stance-tile"><div class="stance-number">[^<]*</div>'
             r"<p>the simple baseline&#x27;s 80% range[^<]*</p></div>"
@@ -1109,6 +1147,7 @@ class TestWhatIsPublished:
         assert set(fragments) == {
             "plotly.md",
             "summary.md",
+            "home_finding.md",
             "status.md",
             "news.md",
             "tomorrow.md",
@@ -1696,6 +1735,38 @@ class TestPaperStrategyBacktest:
         assert rows["Buy-and-hold"][1] == "100.0%"
         assert rows["Paper strategy"][6] == f"{100 * abs(five['worst_drawdown']):.1f}%"
 
+    def test_three_findings_are_shown_and_the_rest_are_folded_not_dropped(self) -> None:
+        report = paper_report()
+        lines = site_page.paper_findings(report)
+        assert site_page.PAPER_HEADLINE_FINDINGS == 3 and len(lines) > 3
+        fragment = site_page.paper_backtest_fragment(report)
+        shown, folded = fragment.split('<details class="more-findings">')
+        folded = folded.split("</details>")[0]
+        for line in lines[:3]:
+            assert f"<li>{html.escape(line)}</li>" in shown
+            assert html.escape(line) not in folded
+        for line in lines[3:]:
+            assert f"<li>{html.escape(line)}</li>" in folded
+            assert html.escape(line) not in shown
+        rest = len(lines) - 3
+        assert f"<summary>{rest} more findings</summary>" in fragment
+        # A native fold: no script, and the table comes after it.
+        assert "<script" not in fragment
+        assert fragment.index("</details>") < fragment.index("<table")
+
+    def test_the_three_shown_are_the_measure_the_return_and_what_the_rule_amounts_to(
+        self,
+    ) -> None:
+        first, second, third = site_page.paper_findings(paper_report())[:3]
+        assert first == site_page.paper_finding(paper_report())
+        assert second.startswith("Its simulated return was ")
+        assert third.startswith("The volatility gate was open on ")
+        assert third.endswith("In practice it is close to the majority rule alone.")
+
+    def test_one_finding_left_over_reads_as_one(self) -> None:
+        assert "<summary>1 more finding</summary>" in site_page._more_findings(["One."])
+        assert site_page._more_findings([]) == ""
+
     def test_the_first_finding_is_the_primary_one(self) -> None:
         report = paper_report()
         assert site_page.paper_findings(report)[0] == site_page.paper_finding(report)
@@ -1799,6 +1870,7 @@ class TestCommandLine:
         written = sorted(p.name for p in (tmp_path / "site" / "_generated").iterdir())
         assert written == [
             "backtest.md",
+            "home_finding.md",
             "news.md",
             "paper.md",
             "paper_backtest.md",

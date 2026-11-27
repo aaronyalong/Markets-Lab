@@ -176,6 +176,19 @@ a:hover {
     display: block;
     margin-top: 0.35rem;
   }
+
+  // Links in the footer must look like links: underlined, in the text colour.
+  .nav-footer-center a {
+    color: $lab-text;
+    text-decoration: underline;
+    text-decoration-color: rgba($lab-accent, 0.6);
+    text-underline-offset: 0.18em;
+
+    &:hover,
+    &:focus-visible {
+      text-decoration-color: $lab-accent;
+    }
+  }
 }
 
 // ------------------------------------------------------------------ building blocks
@@ -577,6 +590,16 @@ a:hover {
 }
 
 // The live experiment: gradient edge, glow, and it lifts on hover.
+// What the experiment has found, on its home-page card. In the text colour (the
+// description above it is grey) and never green or red: it is a result, not a call.
+.lab-card .card-finding {
+  margin: 0.9rem 0 0;
+  padding-top: 0.8rem;
+  border-top: 1px solid $lab-border;
+  font-weight: 600;
+  color: $lab-text;
+}
+
 .lab-card.featured {
   border-color: transparent;
   background:
@@ -1062,6 +1085,40 @@ a:hover {
 
   li + li {
     margin-top: 0.45rem;
+  }
+}
+
+// Findings that are kept one click away, so the first few are not buried. A
+// native fold: it opens with a click or the keyboard and needs no JavaScript.
+.more-findings {
+  margin: 0.75rem 0 0;
+
+  summary {
+    width: fit-content;
+    padding: 0.35rem 0.1rem;
+    cursor: pointer;
+    font-family: $font-family-monospace;
+    font-size: 0.82rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: $lab-text;
+    text-decoration: underline;
+    text-decoration-color: rgba($lab-accent, 0.6);
+    text-underline-offset: 0.2em;
+
+    &:hover {
+      text-decoration-color: $lab-accent;
+    }
+
+    &:focus-visible {
+      outline: 2px solid $lab-accent;
+      outline-offset: 3px;
+      border-radius: 4px;
+    }
+  }
+
+  .findings {
+    margin-top: 0.6rem;
   }
 }
 

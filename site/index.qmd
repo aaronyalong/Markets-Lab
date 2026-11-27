@@ -138,6 +138,8 @@ answer, including when the answer is "it didn't work".
 Can machine learning beat naive baselines at predicting whether NVDA closes up or
 down the next day? Tested on two decades of history, then scored daily on calls it
 cannot take back.
+
+{{< include /_generated/home_finding.md >}}
 :::
 
 ::: {.lab-card .coming-soon}

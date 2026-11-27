@@ -341,6 +341,27 @@ def paper_summary(report: Mapping[str, Any]) -> SummaryTile:
     )
 
 
+def home_finding(report: Mapping[str, Any]) -> str:
+    """The one line about the NVIDIA experiment on the home page's card, worded from
+    the backtest report by the same rule as the tiles and the history section."""
+    models = [name for name, row in report["predictors"].items() if row["kind"] == "model"]
+    if not models:
+        return "Only the baselines have been through the backtest so far."
+    beat = len(models_that_beat_always_up(report))
+    n = len(models)
+    if n == 1:
+        subject = "the one model beat" if beat else "the one model did not beat"
+    elif beat == n:
+        subject = f"all {n} models beat"
+    else:
+        subject = f"{_how_many(beat, n)} of the {n} models beat"
+    return f"In the backtest, {subject} always calling up."
+
+
+def home_finding_fragment(report: Mapping[str, Any]) -> str:
+    return _raw(f'<p class="card-finding">{html.escape(home_finding(report))}</p>')
+
+
 def summary_tiles(
     report: Mapping[str, Any],
     volatility: Mapping[str, Any],
@@ -1291,8 +1312,17 @@ def paper_record_fragment(records: Sequence[Record]) -> str:
     )
 
 
+PAPER_HEADLINE_FINDINGS = 3
+"""How many of the paper strategy's findings are shown outright: the primary
+measure, the simulated return, and that the rule is in practice the majority
+alone. The rest sit in a fold under them."""
+
+
 def paper_findings(report: Mapping[str, Any]) -> list[str]:
-    """Plain-English findings from the paper strategy's backtest, from its numbers."""
+    """Plain-English findings from the paper strategy's backtest, from its numbers.
+
+    The first `PAPER_HEADLINE_FINDINGS` are the ones the page shows outright.
+    """
     data, strategies = report["data"], report["strategies"]
     cost = str(report["primary_cost_bps"])
     ours, theirs = strategies[PAPER_STRATEGY], strategies[PAPER_BENCHMARK]
@@ -1316,16 +1346,16 @@ def paper_findings(report: Mapping[str, Any]) -> list[str]:
         f"{_percent(hold['annualised_return'])}: {return_verdict} ({difference})."
     )
     lines.append(
-        f"It was Holding on {_percent(ours['time_in_market'])} of sessions and traded "
-        f"{ours['trades']:,} times. Its worst fall was {_fall(mine['worst_drawdown'])} against "
-        f"{_fall(hold['worst_drawdown'])} for buy-and-hold; a fall has no interval, so read it "
-        "as a description of this one history."
-    )
-    lines.append(
         f"The volatility gate was open on {_percent(data['share_gate_open'])} of sessions, so "
         "it rarely closed: the strategy held the same position as the models' majority alone "
         f"on {_percent(data['share_same_position_as_majority'])} of sessions. In practice it is "
         "close to the majority rule alone."
+    )
+    lines.append(
+        f"It was Holding on {_percent(ours['time_in_market'])} of sessions and traded "
+        f"{ours['trades']:,} times. Its worst fall was {_fall(mine['worst_drawdown'])} against "
+        f"{_fall(hold['worst_drawdown'])} for buy-and-hold; a fall has no interval, so read it "
+        "as a description of this one history."
     )
     cause = gate_cause(report)
     if cause:
@@ -1405,7 +1435,9 @@ def paper_backtest_fragment(report: Mapping[str, Any]) -> str:
     """Findings and the table for the paper strategy's backtest."""
     cost = str(report["primary_cost_bps"])
     versus = {row["strategy"]: row for row in report["comparisons"]}
-    points = "".join(f"<li>{html.escape(line)}</li>" for line in paper_findings(report))
+    lines = paper_findings(report)
+    points = "".join(f"<li>{html.escape(line)}</li>" for line in lines[:PAPER_HEADLINE_FINDINGS])
+    more = _more_findings(lines[PAPER_HEADLINE_FINDINGS:])
     rows = []
     for name, row in report["strategies"].items():
         money = row["by_cost_bps"][cost]
@@ -1452,11 +1484,24 @@ def paper_backtest_fragment(report: Mapping[str, Any]) -> str:
         rows,
     )
     return _raw(
-        f'<ul class="findings">{points}</ul>{table}'
+        f'<ul class="findings">{points}</ul>{more}{table}'
         '<p class="muted small">Ranges in brackets are 95% intervals. The Sharpe ratio is '
         "the average daily return divided by how much it varies, scaled to a year; cash "
         "earns nothing. Simulated figures from applying the rule to history; they are not "
         "real results.</p>"
+    )
+
+
+def _more_findings(lines: Sequence[str]) -> str:
+    """The remaining findings in a fold that opens without JavaScript. Nothing is
+    left out of the page: the text is all there, one click or key press away."""
+    if not lines:
+        return ""
+    count = f"{len(lines)} more finding{'' if len(lines) == 1 else 's'}"
+    points = "".join(f"<li>{html.escape(line)}</li>" for line in lines)
+    return (
+        f'<details class="more-findings"><summary>{count}</summary>'
+        f'<ul class="findings">{points}</ul></details>'
     )
 
 
@@ -1509,6 +1554,7 @@ def build_fragments(
         **paper_fragments,
         "plotly.md": plotly_loader_fragment(),
         "summary.md": summary_fragment(report, volatility, paper),
+        "home_finding.md": home_finding_fragment(report),
         "status.md": status_fragment(records),
         "news.md": news_fragment(news),
         "tomorrow.md": tomorrow_fragment(records, report),
