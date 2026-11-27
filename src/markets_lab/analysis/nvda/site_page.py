@@ -343,11 +343,12 @@ def stance_backtest_line(models: Sequence[str], report: Mapping[str, Any]) -> st
 
 
 def tomorrow_fragment(records: Sequence[Record], report: Mapping[str, Any] | None = None) -> str:
-    """The latest call from each predictor, labelled as an experiment.
+    """The latest call from each predictor.
 
-    Models and baselines are shown as two labelled groups, models first. The
-    "experiment, not advice" label sits in the heading row, beside the calls.
-    Given the backtest report, the stance panel comes first, under the heading.
+    Models and baselines are shown as two labelled groups, models first. Given
+    the backtest report, the stance panel comes first, under the heading. The
+    page says "an experiment, not advice" once, in the notice under its title,
+    so the fragments do not repeat it.
     """
     scored = scored_predictions(records)
     if scored.empty:
@@ -383,14 +384,10 @@ def tomorrow_fragment(records: Sequence[Record], report: Mapping[str, Any] | Non
     ]
     stance = stance_panel(records, report) if report is not None else ""
     return _raw(
-        f'<div class="call-head"><p class="call-heading">{heading}</p>{ADVICE_TAG}</div>{sub}'
+        f'<div class="call-head"><p class="call-heading">{heading}</p></div>{sub}'
         f"{stance}{''.join(sections)}"
-        f'<p class="muted small">{html.escape(note)} An experiment, not advice.</p>'
+        f'<p class="muted small">{html.escape(note)}</p>'
     )
-
-
-ADVICE_TAG = '<span class="tag advice-tag">Experiment · not advice</span>'
-"""Placed beside the calls and the range wherever they appear."""
 
 
 def _call_card(name: str, call: pd.Series, pending: bool) -> str:
@@ -440,17 +437,15 @@ def status_fragment(records: Sequence[Record]) -> str:
     """One neutral line about the experiment: which session the latest calls are
     for, how many model calls there are and how many sessions have been scored.
 
-    It says nothing about which way the calls went; that stays in the calls band,
-    next to its label.
+    It says nothing about which way the calls went; that stays in the calls band.
     """
-    label = '<span class="status-label">Experiment · not advice</span>'
     scored = scored_predictions(records)
     if scored.empty:
         body = (
             '<span class="status-item"><span class="status-key">Model calls</span>'
             "start after the first nightly run</span>"
         )
-        return _status(label + body)
+        return _status(body)
 
     latest = max(scored["based_on_session"])
     calls = scored[scored["based_on_session"] == latest]
@@ -469,7 +464,7 @@ def status_fragment(records: Sequence[Record]) -> str:
         f'<span class="status-item">{models} model call{"" if models == 1 else "s"}</span>',
         f'<span class="status-item">{sessions} session{"" if sessions == 1 else "s"} scored</span>',
     ]
-    return _status(label + "".join(items))
+    return _status("".join(items))
 
 
 def _status(inner: str) -> str:
@@ -520,8 +515,7 @@ def news_fragment(collections: Sequence[Collection]) -> str:
             "publishers' words, not this site's, and are not checked or selected by a "
             "person. NVIDIA's own press releases are on "
         )
-        + f'<a href="{NVIDIA_NEWSROOM}" target="_blank" rel="noopener">its newsroom</a>. '
-        + "Not advice."
+        + f'<a href="{NVIDIA_NEWSROOM}" target="_blank" rel="noopener">its newsroom</a>.'
     )
     return _raw(f'{body}<p class="muted small">{note}</p>')
 
@@ -817,9 +811,9 @@ def range_fragment(records: Sequence[Record], report: Mapping[str, Any]) -> str:
         ],
     )
     return _raw(
-        f'<div class="call-head"><p class="call-heading">{heading}</p>{ADVICE_TAG}</div>{sub}'
+        f'<div class="call-head"><p class="call-heading">{heading}</p></div>{sub}'
         f"{headline}{finding}{table}"
-        f'<p class="muted small">{html.escape(note)} An experiment, not advice.</p>'
+        f'<p class="muted small">{html.escape(note)}</p>'
     )
 
 
@@ -996,7 +990,7 @@ def paper_finding(report: Mapping[str, Any]) -> str:
 
 
 def paper_fragment(records: Sequence[Record], report: Mapping[str, Any]) -> str:
-    """The paper strategy's state for the latest session, labelled as an experiment.
+    """The paper strategy's state for the latest session.
 
     Neutral by design: the two states are words in the text colour, with no green
     or red, no arrow and nothing that reads as an instruction. A session where one
@@ -1052,10 +1046,9 @@ def paper_fragment(records: Sequence[Record], report: Mapping[str, Any]) -> str:
             f"<p>{html.escape(detail)}</p>{closed}"
         )
     return _raw(
-        f'<div class="call-head"><p class="call-heading">{heading}</p>{ADVICE_TAG}</div>{sub}'
+        f'<div class="call-head"><p class="call-heading">{heading}</p></div>{sub}'
         f'<div class="paper-panel">{PAPER_TAG}{body}{finding}</div>'
-        '<p class="muted small">A simulated position, published so it can be scored. '
-        "An experiment, not advice.</p>"
+        '<p class="muted small">A simulated position, published so it can be scored.</p>'
     )
 
 

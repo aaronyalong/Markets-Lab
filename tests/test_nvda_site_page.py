@@ -221,10 +221,17 @@ class TestTomorrow:
         assert "A fixed rule: no probability." in text
         assert "Not scored yet." in text
 
-    def test_every_set_of_calls_is_labelled_as_an_experiment(self) -> None:
-        assert "An experiment, not advice." in text_of(tomorrow_fragment(log_records()))
-        scored_only = [*log_records(), went(TUE, MON, True)]
-        assert "An experiment, not advice." in text_of(tomorrow_fragment(scored_only))
+    def test_the_calls_do_not_repeat_the_notice_under_the_page_title(self) -> None:
+        # My request (2026-11-26): the page says "an experiment, not advice" once,
+        # under its title, and nowhere else.
+        for records in (log_records(), [*log_records(), went(TUE, MON, True)]):
+            fragment = tomorrow_fragment(records)
+            assert "advice" not in text_of(fragment).lower()
+            assert re.search(
+                r'<div class="call-head"><p class="call-heading">Calls for .*?</p></div>',
+                fragment,
+            )
+        assert "Written before that session opened." in text_of(tomorrow_fragment(log_records()))
 
     def test_once_scored_it_says_so_and_shows_the_result(self) -> None:
         text = text_of(tomorrow_fragment([*log_records(), went(TUE, MON, False)]))
@@ -290,18 +297,6 @@ class TestTomorrow:
     def test_a_group_with_no_members_is_left_out(self) -> None:
         fragment = tomorrow_fragment([call(MON, "logistic", True, 0.6)])
         assert re.findall(r'<p class="call-group-label">([^<]*)', fragment) == ["Models"]
-
-    def test_the_label_sits_beside_the_heading_in_every_state(self) -> None:
-        # My condition (2026-11-24): the "experiment, not advice" label stays
-        # directly beside the calls.
-        for records in (log_records(), [*log_records(), went(TUE, MON, True)]):
-            fragment = tomorrow_fragment(records)
-            assert re.search(
-                r'<div class="call-head"><p class="call-heading">Calls for .*?</p>'
-                r'<span class="tag advice-tag">Experiment · not advice</span></div>',
-                fragment,
-            )
-            assert fragment.index("advice-tag") < fragment.index("call-grid")
 
     def test_columns_divide_the_cards_evenly_where_they_can(self) -> None:
         assert [site_page.grid_columns(n) for n in range(1, 10)] == [1, 2, 3, 4, 3, 3, 3, 4, 3]
@@ -454,7 +449,6 @@ class TestStancePanel:
 class TestStatusStrip:
     def test_before_the_log_starts(self) -> None:
         text = text_of(status_fragment([]))
-        assert "Experiment · not advice" in text
         assert "start after the first nightly run" in text
 
     def test_states_the_next_session_the_model_calls_and_sessions_scored(self) -> None:
@@ -491,7 +485,7 @@ class TestStatusStrip:
             assert not re.search(r'class="[^"]*\b(up|down)\b', fragment)
             assert "%" not in text_of(fragment)
 
-    def test_it_is_always_labelled_an_experiment_and_never_reads_as_a_signal(self) -> None:
+    def test_it_never_reads_as_a_signal_and_does_not_repeat_the_notice(self) -> None:
         for records in (
             [],
             log_records()[:2],
@@ -501,7 +495,8 @@ class TestStatusStrip:
             fragment = status_fragment(records)
             assert 'aria-label="Experiment status"' in fragment
             text = text_of(fragment).lower()
-            assert "experiment · not advice" in text
+            assert "advice" not in text
+            assert "status-label" not in fragment
             assert not re.search(r"\b(buy|sell|signal|recommend\w*|bullish|bearish)\b", text)
 
 
@@ -581,14 +576,14 @@ class TestNews:
         text = text_of(news_fragment([news_day(headline(9, "NVIDIA ships a thing"))]))
         assert "Collected automatically on 19 Mar 2030, 11:00 UTC" in text
         assert "their publishers' words, not this site's" in text
-        assert "Not advice." in text
+        assert "advice" not in text.lower()
 
     def test_the_note_names_what_is_collected_and_links_to_the_newsroom(self) -> None:
         fragment = news_fragment([news_day(headline(9, "NVIDIA ships a thing"))])
         text = text_of(fragment)
         assert "from NVIDIA's SEC filings (SEC EDGAR) and Yahoo Finance's NVDA news feed" in text
         assert "NVIDIA's own press releases are on its newsroom" in text
-        assert ">its newsroom</a>. Not advice." in fragment
+        assert ">its newsroom</a>.</p>" in fragment
         assert (
             '<a href="https://nvidianews.nvidia.com/" target="_blank" rel="noopener">' in fragment
         )
@@ -985,20 +980,20 @@ class TestRangeFragment:
         assert "about 4 days in 5" in text
         assert "It says nothing about which way." in text
         assert "Not scored yet." in text
-        assert "Written before that session opened. An experiment, not advice." in text
+        assert "Written before that session opened." in text
+        assert "advice" not in text.lower()
 
-    def test_the_label_sits_beside_the_range_heading_in_every_state(
+    def test_the_range_does_not_repeat_the_notice_in_any_state(
         self, volatility: dict[str, Any]
     ) -> None:
         scored_only = range_records()[: 2 * len(FORECASTERS) + 1]
         for records in (range_records(), scored_only):
             fragment = site_page.range_fragment(records, volatility)
+            assert "advice" not in text_of(fragment).lower()
             assert re.search(
-                r'<div class="call-head"><p class="call-heading">Ranges for .*?</p>'
-                r'<span class="tag advice-tag">Experiment · not advice</span></div>',
+                r'<div class="call-head"><p class="call-heading">Ranges for .*?</p></div>',
                 fragment,
             )
-            assert fragment.index("advice-tag") < fragment.index('class="range-panel"')
 
     def test_the_finding_sits_between_the_headline_and_the_table(
         self, volatility: dict[str, Any]
@@ -1242,7 +1237,8 @@ class TestPaperStrategyPage:
         assert detail in text
         assert "Paper strategy for Tuesday 19 March 2030" in text
         assert "Not scored yet." in text
-        assert site_page.ADVICE_TAG in fragment  # beside the state, as for the calls
+        assert "advice" not in text.lower()  # said once, under the page title
+        assert "A simulated position, published so it can be scored." in text
         assert "Simulated · no money involved" in text
         no_action_words(fragment)
 

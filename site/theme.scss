@@ -730,19 +730,13 @@ a:hover {
 }
 
 // Latest calls
-// The heading row: the session's date, with the "experiment, not advice" label
-// right beside it.
+// The heading row: the session's date.
 .call-head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.4rem 0.9rem;
   margin-bottom: 0.25rem;
-
-  .advice-tag {
-    color: $lab-text;
-    border-color: $lab-muted;
-  }
 }
 
 .call-heading {
@@ -1219,16 +1213,6 @@ a:hover {
   white-space: nowrap;
   overflow-x: auto;
   scrollbar-width: none;
-
-  .status-label {
-    padding: 0.15rem 0.6rem;
-    border: 1px solid rgba($lab-green, 0.6);
-    border-radius: 999px;
-    color: $lab-green;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    font-size: 0.72rem;
-  }
 
   .status-key {
     color: $lab-muted;

@@ -250,7 +250,11 @@ def test_nvidia_page_has_the_chart_the_notice_and_every_generated_section() -> N
     # TradingView's free widget requires its attribution link to stay.
     assert "tradingview-widget-copyright" in page
     assert "https://www.tradingview.com/" in page
-    assert "An experiment, not advice." in page
+    # Said once, in the notice under the title, and nowhere else in the page's own
+    # text (my request, 2026-11-26). The generated sections are checked in
+    # tests/test_nvda_site_page.py; the footer's disclaimer is separate.
+    assert page.count("An experiment, not advice.") == 1
+    assert page.lower().count("advice") == 1
     for fragment in (
         "status",
         "news",
@@ -436,3 +440,15 @@ def test_the_built_nvidia_page_never_shows_the_word_predictor() -> None:
     visible = re.sub(r"<script.*?</script>", " ", built, flags=re.DOTALL)
     visible = re.sub(r"<[^>]+>", " ", visible)
     assert "predictor" not in visible.lower()
+
+
+@pytest.mark.skipif(not BUILT.is_dir(), reason="site has not been rendered")
+def test_the_built_nvidia_page_says_experiment_not_advice_once() -> None:
+    # My request (2026-11-26): once, under the title. The footer's "Not financial
+    # advice" is the site-wide disclaimer and is counted separately.
+    built = (BUILT / "experiments" / "nvidia.html").read_text()
+    visible = re.sub(r"<script.*?</script>", " ", built, flags=re.DOTALL)
+    visible = " ".join(re.sub(r"<[^>]+>", " ", visible).split()).lower()
+    assert visible.count("not advice") == 1
+    assert visible.count("advice") == 2
+    assert visible.index("an experiment, not advice.") < visible.index("calls for")
