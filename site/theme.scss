@@ -1297,6 +1297,12 @@ a:hover {
   border-radius: 4px;
 }
 
+// The sentence above a live record that says how little a short record means. In
+// the full text colour on purpose: it matters as much as the numbers under it.
+.record-caveat {
+  color: $lab-text;
+}
+
 // Collected filings: the title is the link, with the source and time beneath.
 .news-list {
   list-style: none;

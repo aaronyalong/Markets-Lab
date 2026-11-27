@@ -67,6 +67,11 @@ from markets_lab.market_calendar import next_session
 GENERATED_DIR = "_generated"
 BUY_AND_HOLD = "always_up"
 SESSIONS_TO_TELL_55_FROM_50 = 385
+LIVE_SHARES_AFTER = 60
+"""Scored sessions a row of a live record needs before it is shown as a percentage
+with an interval. Until then the row shows counts only: "100.0%" beside five calls
+reads as a result when it is noise. Fixed on 2026-11-26, before any row reached
+it, and not to be changed once the record is there to look at."""
 # Filings are rare (a few a quarter), so the list looks back about a quarter of
 # daily collections instead of a few days; otherwise it would usually be empty.
 NEWS_DAYS_SHOWN = 90
@@ -539,36 +544,50 @@ def track_record_fragment(records: Sequence[Record]) -> str:
         f"The log started with calls based on {_long_date(started)}. "
         f"{sessions_scored} session{'s have' if sessions_scored != 1 else ' has'} been scored "
         f"so far. It takes about {SESSIONS_TO_TELL_55_FROM_50} scored sessions to tell 55% "
-        "accuracy from a coin flip, so early numbers mean very little."
+        "accuracy from a coin flip, so early numbers mean very little. "
+        f"{_counts_only_note('a model or baseline', 'scored calls')}"
     )
-    table = _table(
-        (
-            Column("Model or baseline"),
-            Column("Type", muted=True),
-            Column("Scored calls"),
-            Column("Right"),
-            Column("Accuracy"),
-            Column("95% interval"),
-        ),
-        [
-            (
-                html.escape(display_name(row.name)),
-                kind_of(row.name),
-                str(row.scored),
-                str(row.hits),
-                _percent(row.accuracy),
-                _interval(row.interval),
-            )
-            for row in rows
-        ],
-    )
+    # Counts only until some row has enough scored calls for a percentage; after
+    # that, a row that joined the log later still waits for its own.
+    with_shares = any(row.scored >= LIVE_SHARES_AFTER for row in rows)
+    columns = [
+        Column("Model or baseline"),
+        Column("Type", muted=True),
+        Column("Scored calls"),
+        Column("Right"),
+    ]
+    if with_shares:
+        columns += [Column("Accuracy"), Column("95% interval")]
+    body = []
+    for row in rows:
+        cells = [
+            html.escape(display_name(row.name)),
+            kind_of(row.name),
+            str(row.scored),
+            str(row.hits),
+        ]
+        if with_shares and row.scored >= LIVE_SHARES_AFTER:
+            cells += [_percent(row.accuracy), _interval(row.interval)]
+        elif with_shares:
+            cells += [_not_yet("calls"), "—"]
+        body.append(cells)
+    table = _table(columns, body)
     series = cumulative_scores(scored)
     chart = (
         _figure_html(cumulative_figure(series), "track-record-chart")
         if any(len(points[1]) for points in series.values())
         else '<div class="panel muted">The chart appears once the first calls are scored.</div>'
     )
-    return _raw(f'<p class="muted">{html.escape(intro)}</p>{table}{chart}')
+    return _raw(f'<p class="record-caveat">{html.escape(intro)}</p>{table}{chart}')
+
+
+def _counts_only_note(who: str, what: str) -> str:
+    """The sentence that says when a live record starts showing percentages."""
+    return f"A percentage is shown only once {who} has {LIVE_SHARES_AFTER} {what}."
+
+
+def _not_yet(what: str) -> str:
+    return f'<span class="muted small">after {LIVE_SHARES_AFTER} {what}</span>'
 
 
 def backtest_fragment(report: Mapping[str, Any]) -> str:
@@ -831,8 +850,10 @@ def range_record_fragment(records: Sequence[Record]) -> str:
         f"split evenly below and above. {sessions_scored} "
         f"session{'s have' if sessions_scored != 1 else ' has'} been scored so far. It takes "
         f"about {SESSIONS_TO_PIN_COVERAGE} scored sessions to measure that share to within "
-        "5 points, so early numbers mean very little."
+        "5 points, so early numbers mean very little. "
+        f"{_counts_only_note('a forecaster', 'scored ranges')}"
     )
+    with_shares = sessions_scored >= LIVE_SHARES_AFTER
     body = []
     for name in ordered_forecasters(list(scored["model"].unique())):
         mine = done[done["model"] == name]
@@ -843,32 +864,29 @@ def range_record_fragment(records: Sequence[Record]) -> str:
         share = held / n if n else None
         interval = wilson_interval(held, n) if n else None
         width = float((mine["upper_return"] - mine["lower_return"]).mean()) if n else None
-        body.append(
-            (
-                html.escape(range_name(name)),
-                range_kind(name),
-                str(n),
-                str(held),
-                f"{_percent(share)}<br><span class='muted small'>{_interval(interval)}</span>",
-                f"{below} / {above}",
-                _width(width),
+        cells = [html.escape(range_name(name)), range_kind(name), str(n), str(held)]
+        if with_shares and n >= LIVE_SHARES_AFTER:
+            cells.append(
+                f"{_percent(share)}<br><span class='muted small'>{_interval(interval)}</span>"
             )
-        )
-    table = _table(
-        (
-            Column("Forecaster"),
-            Column("Type", muted=True),
-            Column("Scored ranges"),
-            Column("Held"),
+        elif with_shares:
+            cells.append(_not_yet("ranges"))
+        cells += [f"{below} / {above}", _width(width)]
+        body.append(cells)
+    columns = [
+        Column("Forecaster"),
+        Column("Type", muted=True),
+        Column("Scored ranges"),
+        Column("Held"),
+    ]
+    if with_shares:
+        columns.append(
             Column(
                 "Share held<br><span class='muted small'>95% interval</span>", label="Share held"
-            ),
-            Column("Missed below / above"),
-            Column("Average width"),
-        ),
-        body,
-    )
-    return _raw(f'<p class="muted">{html.escape(intro)}</p>{table}')
+            )
+        )
+    columns += [Column("Missed below / above"), Column("Average width")]
+    return _raw(f'<p class="record-caveat">{html.escape(intro)}</p>{_table(columns, body)}')
 
 
 def range_backtest_fragment(report: Mapping[str, Any]) -> str:
@@ -956,6 +974,11 @@ LIVE_COUNT_NOTES = (
     "only, and this record needs about a year of sessions before it says much.",
 )
 """The two sentences shown beside the live counts, in the wording I was given."""
+
+PAPER_NOT_SCORED_YET = (
+    "The paper strategy's first entry has not been scored yet; its sessions are counted "
+    "here, against buy-and-hold on the same sessions, from the first one that closes."
+)
 
 
 def paper_finding(report: Mapping[str, Any]) -> str:
@@ -1068,32 +1091,35 @@ def paper_record_fragment(records: Sequence[Record]) -> str:
         return _raw('<div class="panel muted">The paper strategy has no entries yet.</div>')
     record = live_record(records)
     n = record.sessions
+    if not n:
+        # One sentence, not a table of noughts.
+        return _raw(f'<div class="panel muted">{html.escape(PAPER_NOT_SCORED_YET)}</div>')
     intro = (
         f"{n} session{'s have' if n != 1 else ' has'} both an entry and an outcome so far. "
         "A session is on the right side when the strategy was Holding and it closed up, or "
         "In cash and it did not. Buy-and-hold is Holding every session, so its right-side "
-        "sessions are the ones that closed up, counted on the same sessions."
+        "sessions are the ones that closed up, counted on the same sessions. "
+        f"{_counts_only_note('the record', 'compared sessions')}"
     )
+    with_shares = n >= LIVE_SHARES_AFTER
 
-    def share(k: int) -> str:
-        if not n:
-            return "n/a"
-        return (
-            f"{_percent(k / n)}<br><span class='muted small'>"
-            f"{_interval(wilson_interval(k, n))}</span>"
+    def row(name: str, k: int) -> list[str]:
+        cells = [PAPER_NAMES[name], str(n), str(k)]
+        if with_shares:
+            cells.append(
+                f"{_percent(k / n)}<br><span class='muted small'>"
+                f"{_interval(wilson_interval(k, n))}</span>"
+            )
+        return cells
+
+    columns = [Column("Strategy"), Column("Sessions compared"), Column("On the right side")]
+    if with_shares:
+        columns.append(
+            Column("Share<br><span class='muted small'>95% interval</span>", label="Share")
         )
-
     table = _table(
-        (
-            Column("Strategy"),
-            Column("Sessions compared"),
-            Column("On the right side"),
-            Column("Share<br><span class='muted small'>95% interval</span>", label="Share"),
-        ),
-        [
-            (PAPER_NAMES[PAPER_STRATEGY], str(n), str(record.right_side), share(record.right_side)),
-            (PAPER_NAMES[PAPER_BENCHMARK], str(n), str(record.went_up), share(record.went_up)),
-        ],
+        columns,
+        [row(PAPER_STRATEGY, record.right_side), row(PAPER_BENCHMARK, record.went_up)],
     )
     missed = f"Sessions with no entry: {record.missed}."
     if record.missed:
@@ -1103,12 +1129,10 @@ def paper_record_fragment(records: Sequence[Record]) -> str:
         f'<p class="muted">Holding on {record.holding} of the {n} '
         f"({record.holding_went_up} closed up); In cash on {record.in_cash} "
         f"({record.in_cash_not_up} did not close up).</p>"
-        if n
-        else ""
     )
     notes = "".join(f"<p>{html.escape(line)}</p>" for line in LIVE_COUNT_NOTES)
     return _raw(
-        f'<p class="muted">{html.escape(intro)}</p>{table}'
+        f'<p class="record-caveat">{html.escape(intro)}</p>{table}'
         f'<p class="paper-missed">{html.escape(missed)}</p>{split}'
         f'<div class="paper-notes">{notes}</div>'
     )

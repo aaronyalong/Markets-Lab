@@ -8,9 +8,11 @@ import html
 import json
 import re
 from datetime import date
+from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
 import pytest
 
 from context_frames import make_context, make_publications
@@ -127,6 +129,36 @@ def with_verdicts(report: dict[str, Any], **verdicts: tuple[str, str]) -> dict[s
             row["qlike_difference_interval"] = intervals[volatility_verdict]
             row["interval_score_difference_interval"] = intervals[range_verdict]
     return changed
+
+
+def sessions(count: int) -> list[date]:
+    """`count` consecutive weekdays from Thursday 14 March 2030."""
+    return [day.date() for day in pd.bdate_range(THU, periods=count)]
+
+
+def long_log(scored: int, *, late: int = 0) -> list[Record]:
+    """`scored` sessions of calls from always_up and logistic, all scored (always_up
+    right on every third). `late` > 0 adds xgboost for the last `late` sessions only."""
+    days = sessions(scored + 1)
+    records: list[Record] = []
+    for i, (day, following) in enumerate(pairwise(days)):
+        records += [call(day, "always_up", True), call(day, "logistic", i % 3 == 0, 0.5)]
+        if i >= scored - late:
+            records.append(call(day, "xgboost", True, 0.6))
+        records.append(went(following, day, i % 3 == 0))
+    return records
+
+
+def long_ranges(scored: int) -> list[Record]:
+    """`scored` sessions of ranges from two forecasters, all scored inside."""
+    days = sessions(scored + 1)
+    records: list[Record] = []
+    for day, following in pairwise(days):
+        records += [ranged(day, "constant"), ranged(day, "ewma_94")]
+        records.append(went(following, day, True))
+        records += [fell(following, day, "constant", "inside")]
+        records += [fell(following, day, "ewma_94", "inside")]
+    return records
 
 
 def ranged(day: date, model: str, lower: float = -0.03, upper: float = 0.04) -> RangeForecast:
@@ -680,9 +712,53 @@ class TestTrackRecord:
         assert "The log started with calls based on Thursday 14 March 2030." in text
         assert "2 sessions have been scored so far." in text
         assert "about 385 scored sessions" in text
-        assert "50.0%" in text
-        low, high = wilson_interval(1, 2)
-        assert f"({100 * low:.1f}% to {100 * high:.1f}%)" in text
+        assert "A percentage is shown only once a model or baseline has 60 scored calls." in text
+
+    def test_the_threshold_for_percentages_is_60_and_fixed(self) -> None:
+        # My decision (2026-11-26): counts only until 60 sessions are scored; the
+        # number is fixed now and is not to be tuned once the record exists.
+        assert site_page.LIVE_SHARES_AFTER == 60
+
+    def test_a_short_record_is_counts_only(self) -> None:
+        for scored in (2, 5, 59):
+            fragment = track_record_fragment(long_log(scored))
+            ((headings, _),) = table_labels(fragment)
+            assert headings == ["Model or baseline", "Type", "Scored calls", "Right"], scored
+            table = fragment[fragment.index("<table") : fragment.index("</table>")]
+            assert "%" not in table, scored
+            assert table_rows(fragment)["Always up"][2:] == [str(scored), str(-(-scored // 3))]
+
+    def test_percentages_appear_at_60_scored_calls(self) -> None:
+        fragment = track_record_fragment(long_log(60))
+        ((headings, _),) = table_labels(fragment)
+        assert headings[4:] == ["Accuracy", "95% interval"]
+        low, high = wilson_interval(20, 60)
+        assert table_rows(fragment)["Always up"][2:] == [
+            "60",
+            "20",
+            "33.3%",
+            f"({100 * low:.1f}% to {100 * high:.1f}%)",
+        ]
+
+    def test_a_later_arrival_waits_for_its_own_60(self) -> None:
+        rows = table_rows(track_record_fragment(long_log(60, late=5)))
+        assert rows["Always up"][4] == "33.3%"
+        late = rows["XGBoost"]
+        assert late[2:4] == ["5", "1"]  # sessions 55 to 59; only the 57th closed up
+        assert text_of(late[4]).strip() == "after 60 calls" and "%" not in "".join(late[4:])
+
+    def test_the_caveat_is_in_the_full_text_colour(self) -> None:
+        fragments = (
+            track_record_fragment(log_records()),
+            site_page.range_record_fragment(range_records()),
+        )
+        for fragment in fragments:
+            assert re.search(
+                r'<p class="record-caveat">[^<]*early numbers mean very little', fragment
+            )
+        theme = (Path(__file__).parents[1] / "site" / "theme.scss").read_text()
+        rule = theme[theme.index(".record-caveat {") :].split("}", 1)[0]
+        assert "color: $lab-text;" in rule and "$lab-muted" not in rule
 
     def test_fragment_has_the_chart_once_something_is_scored(self) -> None:
         assert 'id="track-record-chart"' in track_record_fragment(log_records())
@@ -1079,20 +1155,30 @@ class TestRangeRecord:
         assert "1 session has been scored so far." in text
         assert "about 250 scored sessions" in text
         assert "built to hold the outcome 80% of the time" in text
+        assert "A percentage is shown only once a forecaster has 60 scored ranges." in text
         rows = table_rows(fragment)
-        held = rows["Weighted recent average"]
-        assert held[2:4] == ["1", "1"] and held[4].startswith("100.0%")
-        assert held[5:] == ["0 / 0", "7.0 points"]
-        missed = rows["Long-run average"]
-        assert missed[2:4] == ["1", "0"] and missed[4].startswith("0.0%")
-        assert missed[5] == "0 / 1"
+        # Counts only on a short record: no share column at all.
+        assert rows["Weighted recent average"][2:] == ["1", "1", "0 / 0", "7.0 points"]
+        assert rows["Long-run average"][2:5] == ["1", "0", "0 / 1"]
+        ((headings, _),) = table_labels(fragment)
+        assert not any("Share" in heading for heading in headings)
 
     def test_a_forecaster_with_nothing_scored_shows_no_share(self) -> None:
         fragment = site_page.range_record_fragment([ranged(THU, "ewma_94")])
         assert "0 sessions have been scored so far." in text_of(fragment)
         cells = table_rows(fragment)["Weighted recent average"]
-        assert cells[2:4] == ["0", "0"] and cells[4].startswith("n/a")
-        assert cells[-1] == "n/a"
+        assert cells[2:] == ["0", "0", "0 / 0", "n/a"]
+
+    def test_the_share_held_appears_at_60_scored_ranges(self) -> None:
+        short = site_page.range_record_fragment(long_ranges(59))
+        assert "100.0%" not in short and "Share held" not in short
+        fragment = site_page.range_record_fragment(long_ranges(60))
+        ((headings, _),) = table_labels(fragment)
+        assert headings[4] == "Share held 95% interval"
+        low, high = wilson_interval(60, 60)
+        cell = table_rows(fragment)["Weighted recent average"][4]
+        assert cell.startswith("100.0%<br>")
+        assert f"({100 * low:.1f}% to {100 * high:.1f}%)" in cell
 
 
 class TestRangeBacktest:
@@ -1338,12 +1424,47 @@ class TestPaperStrategyRecord:
             assert word not in text
         no_action_words(site_page.paper_record_fragment(paper_log()))
 
-    def test_nothing_scored_yet_shows_no_share(self) -> None:
+    def test_nothing_scored_yet_is_one_sentence_not_a_table(self) -> None:
+        # My decision (2026-11-26): one sentence until the first scored session.
         records = [*six(THU, 5), paper_entry(THU, 5)]
         fragment = site_page.paper_record_fragment(records)
-        assert "0 sessions have both an entry and an outcome so far." in text_of(fragment)
-        assert table_rows(fragment)["Paper strategy"][3] == "n/a"
+        assert "<table" not in fragment and "n/a" not in fragment
+        text = text_of(fragment).replace("```{=html}", "").replace("```", "").strip()
+        assert text == site_page.PAPER_NOT_SCORED_YET
+        assert text.count(".") == 1 and text.startswith("The paper strategy's first entry")
         assert "Holding on" not in fragment
+        no_action_words(fragment)
+
+    def long_paper_log(self, scored: int) -> list[Record]:
+        days = sessions(scored + 1)
+        records: list[Record] = []
+        for i, (day, following) in enumerate(pairwise(days)):
+            records += [*six(day, 5), paper_entry(day, 5), went(following, day, i % 2 == 0)]
+        return records
+
+    def test_a_short_record_is_counts_only(self) -> None:
+        for scored in (1, 59):
+            fragment = site_page.paper_record_fragment(self.long_paper_log(scored))
+            ((headings, _),) = table_labels(fragment)
+            assert headings == ["Strategy", "Sessions compared", "On the right side"]
+            table = fragment[fragment.index("<table") : fragment.index("</table>")]
+            assert "%" not in table and "n/a" not in table
+        text = text_of(site_page.paper_record_fragment(self.long_paper_log(1)))
+        assert "A percentage is shown only once the record has 60 compared sessions." in text
+
+    def test_the_share_appears_at_60_compared_sessions(self) -> None:
+        fragment = site_page.paper_record_fragment(self.long_paper_log(60))
+        ((headings, _),) = table_labels(fragment)
+        assert headings == [
+            "Strategy",
+            "Sessions compared",
+            "On the right side",
+            "Share 95% interval",
+        ]
+        rows = table_rows(fragment)
+        assert rows["Paper strategy"][1:3] == ["60", "30"]
+        assert rows["Paper strategy"][3].startswith("50.0%<br>")
+        assert rows["Buy-and-hold"][3].startswith("50.0%<br>")
 
 
 class TestPaperStrategyBacktest:
