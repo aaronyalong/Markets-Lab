@@ -59,18 +59,22 @@ down the next day?
   and worst fall appear in the backtest section.
 - "No model beats buy-and-hold" is a valid outcome and will be reported as such.
 
-### NVIDIA headlines
+### NVIDIA filings
 
-Each morning a separate job collects the last day's NVIDIA headlines from the
-company's SEC filings (SEC EDGAR) and Yahoo Finance's official NVDA RSS feed, and
-the NVIDIA page links to them. These are the two sources whose terms allow it:
-SEC information may be freely copied and redistributed, and Yahoo allows its RSS
-feeds to be shown unmodified, with credit and a link. Yahoo headlines are shown
-exactly as the feed gives them, marked "via Yahoo Finance". NVIDIA's own newsroom
-is not collected (its terms forbid automated access); the page links to it instead.
-Only the headline, publisher, time and link are kept; article text and publishers'
-summaries are not stored or shown. Each day is written once to
+Each morning a separate job collects NVIDIA's SEC filings from the last day (Forms
+8-K, 10-Q and 10-K, from SEC EDGAR), and the NVIDIA page lists the latest ones with
+a link to each. SEC information may be freely copied and redistributed. Each title
+is this site's plain description of the form, and only the title, time and link are
+kept; filing text is not stored or shown. Each day is written once to
 `news/nvda/YYYY-MM-DD.json` and never changed afterwards.
+
+News headlines are not collected. NVIDIA's newsroom and Yahoo's news list were
+dropped because their terms do not allow it. Yahoo Finance's official RSS feed,
+whose terms do, was dropped because its headlines are other publishers' opinion
+pieces, which do not belong on a page that gives no buy or sell signals. The page
+links to Yahoo Finance's NVDA news page and to NVIDIA's newsroom instead. Items
+collected from those sources in the past stay in their day files and are never
+shown.
 
 ```bash
 uv run python -m markets_lab.collectors.nvda_news --dry-run   # show, write nothing
@@ -105,13 +109,13 @@ against the filing's XBRL data.
 
 ```
 src/markets_lab/
-  collectors/   data fetching (daily NVDA prices, market indices, results dates, headlines)
+  collectors/   data fetching (daily NVDA prices, market indices, results dates, filings)
   analysis/     features, validation, and models
 tests/          pytest suite
 data/           raw local data (gitignored)
 site/           Quarto website (pages, theme); build output is gitignored
 predictions/    the live prediction log, appended to by the nightly job
-news/           collected NVIDIA headlines, one file per day
+news/           collected NVIDIA filings, one file per day
 reports/        backtest aggregates shown on the site
 ```
 

@@ -1,10 +1,11 @@
 name: NVDA news
 
-# Collects the last day's NVIDIA headlines (headline, publisher, time and link
-# only) into news/nvda/, one file per day. Research only, not financial advice.
+# Collects NVIDIA's SEC filings from the last day (Forms 8-K, 10-Q and 10-K; title,
+# time and link only) into news/nvda/, one file per day. News headlines are not
+# collected. Research only, not financial advice.
 #
-# Kept separate from the nightly prediction job on purpose: a news source being
-# down must never stop the prediction log from being written.
+# Kept separate from the nightly prediction job on purpose: SEC EDGAR being down
+# must never stop the prediction log from being written.
 #
 # A day's file is written once and never changed. The job refuses to commit
 # anything except new day files, so earlier days cannot be edited by it.
@@ -38,7 +39,7 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked
 
-      - name: Collect headlines
+      - name: Collect filings
         run: uv run python -m markets_lab.collectors.nvda_news --dir "$NEWS_DIR"
 
       # Only brand-new day files may appear. A modified or deleted file, or any

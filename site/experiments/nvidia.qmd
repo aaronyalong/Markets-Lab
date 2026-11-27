@@ -31,7 +31,7 @@ be followed.
     <a href="#latest-calls">Calls</a>
     <a href="#latest-range">Range</a>
     <a href="#track-record">Record</a>
-    <a href="#nvidia-headlines">News</a>
+    <a href="#nvidia-filings">Filings</a>
     <a href="#live-chart">Chart</a>
     <a href="#what-two-decades-of-history-say">History</a>
     <a href="#method">Method</a>
@@ -112,9 +112,9 @@ enforced.
 
 ::::: {.band}
 
-[In the news]{.eyebrow}
+[From the SEC]{.eyebrow}
 
-## NVIDIA headlines {.section-title}
+## NVIDIA filings {.section-title}
 
 {{< include /_generated/news.md >}}
 

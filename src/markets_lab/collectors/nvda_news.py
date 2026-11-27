@@ -1,27 +1,30 @@
-"""Collect recent NVIDIA headlines from two free sources whose terms allow it.
+"""Collect NVIDIA's recent SEC filings (Forms 8-K, 10-Q and 10-K) from SEC EDGAR.
 
-- SEC EDGAR (the company's 8-K, 10-Q and 10-K filings). SEC information "may be
-  copied or further distributed" without permission; the page credits SEC EDGAR.
-- Yahoo Finance's official RSS feed for NVDA. Yahoo's terms forbid automated
-  collection in general but allow showing RSS feed content "without modification",
-  with credit and a link to the full article. So a title is kept exactly as the
-  feed gives it, or the item is skipped; it is never shortened or edited.
+SEC information "may be copied or further distributed" without permission; the
+page credits SEC EDGAR. Each title is this site's own plain description of the
+form and its item numbers, not text written by NVIDIA or the SEC.
 
-NVIDIA's own newsroom is not collected: its terms forbid automated access and
-public display. The page links to the newsroom instead. Until 2026-11-24 the
-newsroom feed and Yahoo's unofficial news list (through yfinance) were collected;
-those day files are still read, but the page no longer shows their items.
+News headlines are not collected. Three sources were tried and dropped, and their
+items stay in the old day files, which are still read but never shown:
 
-Only the headline, publisher, time and link are kept. Article text and publishers'
-summaries are never stored or shown: the site links out to them.
+- NVIDIA's newsroom feed and Yahoo's unofficial news list (through yfinance),
+  until 2026-11-24: their terms do not allow it.
+- Yahoo Finance's official NVDA RSS feed, 2026-11-24 to 2026-11-26. Its terms do
+  allow showing the feed unmodified, but the titles are other publishers' opinion
+  headlines ("...a buying opportunity"), which do not belong on a page that gives
+  no buy or sell signals, and may not be edited. The page links to Yahoo Finance's
+  NVDA news page and to NVIDIA's newsroom instead.
+
+Only the title, source, time and link are kept. Filing text is never stored or
+shown: the site links out to it.
 
 Each day's collection is written once to `news/nvda/YYYY-MM-DD.json` (UTC date)
 and never changed afterwards, so the archive can later be used as dated model
 input without any doubt about what was known when.
 
-Everything fetched here is text written by other people. It is treated as data:
-whitespace is normalised, lengths are capped, and links must be plain https URLs
-(for the two official sources, on the expected host).
+Everything fetched here is treated as data: whitespace is normalised, lengths are
+capped, and links must be plain https URLs on the expected host. Old day files
+hold text written by other people and are re-checked the same way when read.
 
     uv run python -m markets_lab.collectors.nvda_news            # write today's file
     uv run python -m markets_lab.collectors.nvda_news --dry-run  # show, write nothing
@@ -35,15 +38,12 @@ import os
 import sys
 import urllib.error
 import urllib.request
-import xml.etree.ElementTree as ET
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime, timedelta
-from email.utils import parsedate_to_datetime
 from pathlib import Path
 from urllib.parse import urlsplit
 
-YAHOO_RSS_URL = "https://feeds.finance.yahoo.com/rss/2.0/headline?s=NVDA&region=US&lang=en-US"
 EDGAR_URL = "https://data.sec.gov/submissions/CIK0001045810.json"
 EDGAR_ARCHIVE = "https://www.sec.gov/Archives/edgar/data/1045810"
 
@@ -57,12 +57,11 @@ WINDOW_HOURS = 24
 MAX_TITLE_LENGTH = 200
 MAX_PUBLISHER_LENGTH = 60
 
-EDGAR, YAHOO_RSS = "sec_edgar", "yahoo_finance_rss"
-SOURCES = frozenset({EDGAR, YAHOO_RSS})
-# Collected until 2026-11-24 and no longer (see above). Old day files keep them;
-# they are read so those files stay valid, and never shown.
-RETIRED_SOURCES = frozenset({"nvidia_newsroom", "yahoo_finance"})
-RELEVANT_WORDS = ("nvidia", "nvda")
+EDGAR = "sec_edgar"
+SOURCES = frozenset({EDGAR})
+# No longer collected (see above). Old day files keep their items; the names are
+# accepted so those files stay valid, and the items are never shown.
+RETIRED_SOURCES = frozenset({"nvidia_newsroom", "yahoo_finance", "yahoo_finance_rss"})
 
 # Filings a reader would recognise as news. Insider-trade forms and the like are
 # left out: they are frequent and say little on their own.
@@ -95,7 +94,7 @@ class NewsError(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class NewsItem:
-    """One headline. `published_at` is always UTC."""
+    """One filing (or, in old day files, one headline). `published_at` is always UTC."""
 
     source: str
     publisher: str
@@ -131,22 +130,6 @@ def clean_text(text: object, limit: int) -> str:
     return collapsed[: limit - 1].rstrip() + "…"
 
 
-def exact_title(text: object, limit: int) -> str | None:
-    """The title as given, or None if it cannot be shown unchanged.
-
-    Runs of whitespace become one space, which is how a browser shows them anyway.
-    A title that is too long, or holds invisible or control characters, is not
-    shortened or cleaned: the caller skips the item.
-    """
-    if not isinstance(text, str):
-        return None
-    words = text.split()
-    title = " ".join(words)
-    if not title or len(title) > limit or not all(word.isprintable() for word in words):
-        return None
-    return title
-
-
 def safe_url(url: object, *, hosts: frozenset[str] | None = None) -> str | None:
     """The URL if it is a plain https link (on an expected host, if given)."""
     if not isinstance(url, str):
@@ -169,34 +152,6 @@ def _utc(moment: datetime) -> datetime:
 
 
 # ------------------------------------------------------------------------ parsing
-
-
-def parse_yahoo_rss(xml_text: str) -> list[NewsItem]:
-    """Headlines from Yahoo Finance's NVDA feed that mention NVIDIA in the title.
-
-    Only the title, link and time are read; the feed's `description` (the
-    publisher's summary) is never read. Titles and links are kept exactly as given.
-    """
-    try:
-        root = ET.fromstring(xml_text)
-    except ET.ParseError as exc:
-        raise NewsError(f"Yahoo Finance feed is not valid XML: {exc}") from exc
-    entries = root.findall("./channel/item")
-    if not entries:
-        raise NewsError("Yahoo Finance feed has no items")
-    items: list[NewsItem] = []
-    for entry in entries:
-        title = exact_title(entry.findtext("title"), MAX_TITLE_LENGTH)
-        if title is None or not any(word in title.lower() for word in RELEVANT_WORDS):
-            continue
-        url = safe_url(entry.findtext("link"))
-        try:
-            published = _utc(parsedate_to_datetime(entry.findtext("pubDate") or ""))
-        except (TypeError, ValueError):
-            continue
-        if url:
-            items.append(NewsItem(YAHOO_RSS, "Yahoo Finance", title, url, published))
-    return items
 
 
 def filing_title(form: str, item_codes: str) -> str:
@@ -264,14 +219,7 @@ def fetch_edgar() -> list[NewsItem]:
     return parse_edgar(sec_get(EDGAR_URL))
 
 
-def fetch_yahoo_rss() -> list[NewsItem]:
-    return parse_yahoo_rss(_get(YAHOO_RSS_URL, user_agent=DEFAULT_USER_AGENT))
-
-
-DEFAULT_FETCHERS: dict[str, Fetcher] = {
-    EDGAR: fetch_edgar,
-    YAHOO_RSS: fetch_yahoo_rss,
-}
+DEFAULT_FETCHERS: dict[str, Fetcher] = {EDGAR: fetch_edgar}
 
 
 def collect(
@@ -385,7 +333,7 @@ def main(
 ) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m markets_lab.collectors.nvda_news",
-        description="Collect the last day's NVIDIA headlines into news/nvda/.",
+        description="Collect the last day's NVIDIA SEC filings into news/nvda/.",
     )
     parser.add_argument("--dir", type=Path, default=DEFAULT_DIR)
     parser.add_argument("--dry-run", action="store_true", help="show the items, write nothing")

@@ -1,4 +1,4 @@
-"""Collecting NVIDIA headlines: only headline, publisher, time and link, and all of it
+"""Collecting NVIDIA's SEC filings: only title, source, time and link, and all of it
 treated as untrusted text. Every payload here is made up; nothing is fetched."""
 
 from __future__ import annotations
@@ -14,23 +14,19 @@ from markets_lab.collectors import nvda_news
 from markets_lab.collectors.nvda_news import (
     DEFAULT_FETCHERS,
     EDGAR,
-    MAX_TITLE_LENGTH,
     RETIRED_SOURCES,
     SOURCES,
-    YAHOO_RSS,
     Collection,
     NewsError,
     NewsItem,
     clean_text,
     collect,
     day_path,
-    exact_title,
     filing_title,
     from_json,
     load_recent,
     main,
     parse_edgar,
-    parse_yahoo_rss,
     safe_url,
     save_day,
     to_json,
@@ -40,7 +36,7 @@ NOW = datetime(2030, 3, 19, 11, 0, tzinfo=UTC)
 WORKFLOW = Path(__file__).resolve().parents[1] / ".github" / "workflows" / "news.yml"
 
 
-def item(hours_ago: float, title: str = "NVIDIA does a thing", source: str = YAHOO_RSS) -> NewsItem:
+def item(hours_ago: float, title: str = "NVIDIA does a thing", source: str = EDGAR) -> NewsItem:
     slug = re.sub(r"\W+", "-", title.lower())
     return NewsItem(
         source=source,
@@ -48,18 +44,6 @@ def item(hours_ago: float, title: str = "NVIDIA does a thing", source: str = YAH
         title=title,
         url=f"https://news.example.org/{slug}",
         published_at=NOW - timedelta(hours=hours_ago),
-    )
-
-
-def rss(*entries: str) -> str:
-    return f"<rss><channel><title>Feed</title>{''.join(entries)}</channel></rss>"
-
-
-def rss_item(title: str, link: str, date: str = "Mon, 18 Mar 2030 14:00:31 +0000") -> str:
-    return (
-        "<item><description>The publisher's own summary, which must never be kept."
-        f'</description><guid isPermaLink="false">x</guid><link>{link}</link>'
-        f"<pubDate>{date}</pubDate><title>{title}</title></item>"
     )
 
 
@@ -103,83 +87,25 @@ class TestCleaning:
 
 
 class TestSources:
-    def test_only_sec_and_yahoos_feed_are_collected(self) -> None:
-        # NVIDIA's terms forbid automated access and public display, and Yahoo's
-        # allow only its RSS feeds (decided 2026-11-24).
-        assert set(DEFAULT_FETCHERS) == SOURCES == {EDGAR, YAHOO_RSS}
+    def test_only_sec_filings_are_collected(self) -> None:
+        # My decision (2026-11-26): SEC filings only. NVIDIA's terms forbid automated
+        # access and public display; Yahoo's feed is allowed but carries other
+        # publishers' "buy this stock" headlines, which the page must not show.
+        assert set(DEFAULT_FETCHERS) == SOURCES == {EDGAR}
         assert not SOURCES & RETIRED_SOURCES
+        assert {"nvidia_newsroom", "yahoo_finance", "yahoo_finance_rss"} == RETIRED_SOURCES
+
+    def test_the_collector_has_no_way_to_reach_a_news_site(self) -> None:
         code = Path(nvda_news.__file__).read_text()
+        addresses = set(re.findall(r"https://[^\s\"')]+", code))
+        assert addresses
+        assert all(
+            address.startswith(("https://data.sec.gov/", "https://www.sec.gov/"))
+            for address in addresses
+        ), addresses
         assert "yfinance" not in code.replace("(through yfinance)", "")
-        assert "nvidianews.nvidia.com/releases" not in code
-        assert nvda_news.YAHOO_RSS_URL.startswith("https://feeds.finance.yahoo.com/rss/")
-
-
-class TestYahooFeed:
-    def test_reads_title_link_and_time_only(self) -> None:
-        feed = rss(rss_item("NVIDIA Announces a Thing", "https://finance.example.com/a?.tsrc=rss"))
-        (only,) = parse_yahoo_rss(feed)
-        assert only == NewsItem(
-            YAHOO_RSS,
-            "Yahoo Finance",
-            "NVIDIA Announces a Thing",
-            "https://finance.example.com/a?.tsrc=rss",
-            datetime(2030, 3, 18, 14, 0, 31, tzinfo=UTC),
-        )
-        assert "summary" not in to_json(Collection(NOW, 24, (only,), ()))
-
-    def test_a_title_is_kept_exactly_as_the_feed_gives_it(self) -> None:
-        title = "NVDA Eyes Worst Month — Dip Buyers \u2018Still Fighting\u2019 &amp; Waiting"
-        (only,) = parse_yahoo_rss(rss(rss_item(title, "https://finance.example.com/a")))
-        assert (
-            only.title == "NVDA Eyes Worst Month — Dip Buyers \u2018Still Fighting\u2019 & Waiting"
-        )
-
-    def test_a_title_that_cannot_be_shown_unchanged_is_skipped_not_edited(self) -> None:
-        too_long = "NVIDIA " + "x" * MAX_TITLE_LENGTH
-        feed = rss(
-            rss_item(too_long, "https://finance.example.com/long"),
-            rss_item("NVIDIA\u200b hidden", "https://finance.example.com/hidden"),
-            rss_item("  NVIDIA   spaced\n out ", "https://finance.example.com/spaced"),
-        )
-        assert [i.title for i in parse_yahoo_rss(feed)] == ["NVIDIA spaced out"]
-        assert exact_title("x" * MAX_TITLE_LENGTH, MAX_TITLE_LENGTH) == "x" * MAX_TITLE_LENGTH
-        assert exact_title("x" * (MAX_TITLE_LENGTH + 1), MAX_TITLE_LENGTH) is None
-        assert exact_title(None, MAX_TITLE_LENGTH) is None
-        assert exact_title("   ", MAX_TITLE_LENGTH) is None
-
-    def test_headlines_that_do_not_mention_nvidia_are_dropped(self) -> None:
-        feed = rss(
-            rss_item(
-                "Will the S&amp;P 500 open up or down today?", "https://finance.example.com/a"
-            ),
-            rss_item("Why NVDA moved today", "https://finance.example.com/b"),
-            rss_item("Nvidia and the memory market", "https://finance.example.com/c"),
-        )
-        titles = [i.title for i in parse_yahoo_rss(feed)]
-        assert titles == ["Why NVDA moved today", "Nvidia and the memory market"]
-
-    def test_bad_links_and_dates_are_dropped_without_failing(self) -> None:
-        feed = rss(
-            rss_item("NVIDIA insecure", "http://finance.example.com/insecure"),
-            rss_item("NVIDIA script", "javascript:alert(1)"),
-            rss_item("NVIDIA no date", "https://finance.example.com/a", date="soon"),
-            rss_item("NVIDIA fine", "https://finance.example.com/ok"),
-        )
-        assert [i.title for i in parse_yahoo_rss(feed)] == ["NVIDIA fine"]
-
-    def test_markup_in_a_title_stays_text(self) -> None:
-        feed = rss(
-            rss_item(
-                "&lt;script&gt;alert(1)&lt;/script&gt; NVIDIA", "https://finance.example.com/a"
-            )
-        )
-        assert parse_yahoo_rss(feed)[0].title == "<script>alert(1)</script> NVIDIA"
-
-    def test_broken_or_empty_feeds_fail_loudly(self) -> None:
-        with pytest.raises(NewsError, match="not valid XML"):
-            parse_yahoo_rss("<rss><channel>")
-        with pytest.raises(NewsError, match="no items"):
-            parse_yahoo_rss(rss())
+        for gone in ("parse_yahoo_rss", "fetch_yahoo_rss", "YAHOO_RSS", "xml.etree"):
+            assert gone not in code, gone
 
 
 def edgar(**columns: list[str]) -> str:
@@ -236,7 +162,7 @@ class TestCollect:
         fresh, older, stale, future = item(2, "B"), item(20, "A"), item(30, "old"), item(-1, "soon")
         result = collect(
             now=NOW,
-            fetchers={YAHOO_RSS: lambda: [older, stale, fresh], EDGAR: lambda: [fresh, future]},
+            fetchers={"other": lambda: [older, stale, fresh], EDGAR: lambda: [fresh, future]},
         )
         assert [i.title for i in result.items] == ["B", "A"]
         assert result.failed_sources == ()
@@ -248,7 +174,7 @@ class TestCollect:
         def broken() -> list[NewsItem]:
             raise OSError("connection refused")
 
-        result = collect(now=NOW, fetchers={EDGAR: broken, YAHOO_RSS: lambda: [item(1)]})
+        result = collect(now=NOW, fetchers={EDGAR: broken, "other": lambda: [item(1)]})
         assert len(result.items) == 1
         assert result.failed_sources == (EDGAR,)
         assert "sec_edgar failed: connection refused" in capsys.readouterr().err
@@ -258,10 +184,17 @@ class TestCollect:
             raise NewsError("down")
 
         with pytest.raises(NewsError, match="every news source failed"):
-            collect(now=NOW, fetchers={EDGAR: broken, YAHOO_RSS: broken})
+            collect(now=NOW, fetchers={EDGAR: broken, "other": broken})
+
+    def test_with_sec_as_the_only_source_its_failure_is_the_whole_failure(self) -> None:
+        def broken() -> list[NewsItem]:
+            raise OSError("connection refused")
+
+        with pytest.raises(NewsError, match="every news source failed: sec_edgar"):
+            collect(now=NOW, fetchers={name: broken for name in DEFAULT_FETCHERS})
 
     def test_a_quiet_day_is_not_an_error(self) -> None:
-        assert collect(now=NOW, fetchers={YAHOO_RSS: lambda: [item(40)]}).items == ()
+        assert collect(now=NOW, fetchers={EDGAR: lambda: [item(40)]}).items == ()
 
     def test_a_time_without_a_zone_is_refused(self) -> None:
         with pytest.raises(ValueError, match="time zone"):
@@ -321,6 +254,15 @@ class TestStorage:
         old = Collection(NOW, 24, tuple(item(1, f"NVIDIA {s}", s) for s in RETIRED_SOURCES), ())
         assert from_json(to_json(old)) == old
 
+    def test_every_day_file_in_the_repository_still_loads(self) -> None:
+        # Day files are never rewritten, so the ones written while headlines were
+        # collected must stay readable for good.
+        folder = WORKFLOW.parents[2] / "news" / "nvda"
+        days = load_recent(folder, days=100_000)
+        assert days
+        for day in days:
+            assert all(i.source in SOURCES | RETIRED_SOURCES for i in day.items)
+
     def test_a_file_that_is_not_json_is_refused(self) -> None:
         with pytest.raises(NewsError, match="not valid"):
             from_json("{")
@@ -330,7 +272,7 @@ class TestCommand:
     def test_writes_the_day_then_does_nothing_on_a_rerun(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        fetchers = {YAHOO_RSS: lambda: [item(1, "NVIDIA ships")]}
+        fetchers = {EDGAR: lambda: [item(1, "NVIDIA ships")]}
         assert main(["--dir", str(tmp_path)], now=NOW, fetchers=fetchers) == 0
         out = capsys.readouterr().out
         assert "Example Wire: NVIDIA ships" in out
@@ -343,7 +285,7 @@ class TestCommand:
     def test_dry_run_writes_nothing(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        fetchers = {YAHOO_RSS: lambda: [item(1)]}
+        fetchers = {EDGAR: lambda: [item(1)]}
         assert main(["--dir", str(tmp_path), "--dry-run"], now=NOW, fetchers=fetchers) == 0
         assert "Dry run: nothing written." in capsys.readouterr().out
         assert list(tmp_path.iterdir()) == []
@@ -354,7 +296,7 @@ class TestCommand:
         def broken() -> list[NewsItem]:
             raise OSError("offline")
 
-        assert main(["--dir", str(tmp_path)], now=NOW, fetchers={YAHOO_RSS: broken}) == 1
+        assert main(["--dir", str(tmp_path)], now=NOW, fetchers={EDGAR: broken}) == 1
         assert "NEWS COLLECTION FAILED" in capsys.readouterr().err
         assert list(tmp_path.iterdir()) == []
 

@@ -273,7 +273,7 @@ def test_nvidia_page_has_the_chart_the_notice_and_every_generated_section() -> N
     # The chart library must also come before the range chart further down.
     assert page.index("_generated/plotly.md") < page.index("_generated/range_backtest.md")
     for heading in (
-        "NVIDIA headlines",
+        "NVIDIA filings",
         "Live chart",
         "Latest calls",
         "Latest range",
@@ -367,7 +367,7 @@ def test_the_calls_and_the_range_come_first_on_the_nvidia_page() -> None:
         "## Latest calls",
         "## Latest range",
         "## Track record",
-        "## NVIDIA headlines",
+        "## NVIDIA filings",
         "## Live chart",
         "## What two decades of history say",
         "## Method",

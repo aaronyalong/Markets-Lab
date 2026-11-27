@@ -50,7 +50,7 @@ from markets_lab.analysis.nvda.volatility.dataset import (
     build_volatility_dataset,
     compute_ewma_volatility,
 )
-from markets_lab.collectors.nvda_news import EDGAR, YAHOO_RSS, Collection, NewsItem, save_day
+from markets_lab.collectors.nvda_news import EDGAR, Collection, NewsItem, save_day
 from nvda_test_predictors import LeastSquaresLearner
 from price_frames import at, make_prices
 
@@ -500,10 +500,11 @@ class TestStatusStrip:
             assert not re.search(r"\b(buy|sell|signal|recommend\w*|bullish|bearish)\b", text)
 
 
-def headline(hour: int, title: str, url: str | None = None, *, source: str = YAHOO_RSS) -> NewsItem:
+def headline(hour: int, title: str, url: str | None = None, *, source: str = EDGAR) -> NewsItem:
+    """One collected item. By default a filing; `source` makes it an old headline."""
     return NewsItem(
         source=source,
-        publisher="Yahoo Finance" if source == YAHOO_RSS else "Example Wire",
+        publisher="SEC EDGAR" if source == EDGAR else "Example Wire",
         title=title,
         url=url or f"https://news.example.org/{hour}",
         published_at=at(f"{MON} {hour:02d}:00"),
@@ -516,51 +517,50 @@ def news_day(*items: NewsItem) -> Collection:
 
 class TestNews:
     def test_before_anything_is_collected(self) -> None:
-        assert "No headlines have been collected yet." in text_of(news_fragment([]))
+        assert "No filings have been collected yet." in text_of(news_fragment([]))
 
     def test_a_quiet_spell_says_so(self) -> None:
-        assert "No NVIDIA headlines in the last few days." in text_of(news_fragment([news_day()]))
+        text = text_of(news_fragment([news_day()]))
+        assert "No current, quarterly or annual report was filed in the last 90 days" in text
 
-    def test_each_headline_links_out_with_its_publisher_and_time(self) -> None:
-        fragment = news_fragment([news_day(headline(9, "NVIDIA ships a thing"))])
+    def test_each_filing_links_out_with_its_source_and_time(self) -> None:
+        fragment = news_fragment([news_day(headline(9, "Form 8-K: current report"))])
         assert (
             '<a href="https://news.example.org/9" target="_blank" rel="noopener nofollow">'
-            "NVIDIA ships a thing</a>"
+            "Form 8-K: current report</a>"
         ) in fragment
         text = text_of(fragment)
-        assert "via Yahoo Finance ·" in text and "09:00 UTC" in text
+        assert "SEC EDGAR ·" in text and "09:00 UTC" in text
+        assert "via " not in text
 
-    def test_sec_filings_are_credited_to_sec_edgar_without_via(self) -> None:
-        filing = NewsItem(
-            EDGAR,
-            "SEC EDGAR",
-            "Form 8-K: current report",
-            "https://www.sec.gov/a",
-            at(f"{MON} 09:00"),
-        )
-        text = text_of(news_fragment([news_day(filing)]))
-        assert "SEC EDGAR ·" in text and "via SEC EDGAR" not in text
-
-    def test_headlines_from_retired_sources_are_never_shown(self) -> None:
-        # NVIDIA's newsroom and Yahoo's unofficial list stopped on 2026-11-24.
+    def test_only_sec_filings_are_ever_shown(self) -> None:
+        # My decision (2026-11-26): SEC filings only. Headlines collected earlier,
+        # from Yahoo's feed, Yahoo's list or NVIDIA's newsroom, never reach the page.
         old = [
             headline(10, "From the newsroom", source="nvidia_newsroom"),
             headline(11, "From the unofficial list", source="yahoo_finance"),
+            headline(12, "A Once-in-a-Decade Buying Opportunity", source="yahoo_finance_rss"),
         ]
-        fragment = news_fragment([news_day(*old, headline(9, "From the feed"))])
+        fragment = news_fragment([news_day(*old, headline(9, "Form 10-Q: quarterly report"))])
         titles = re.findall(r'rel="noopener nofollow">([^<]+)</a>', fragment)
-        assert titles == ["From the feed"]
+        assert titles == ["Form 10-Q: quarterly report"]
+        assert "Buying" not in fragment
         only_old = text_of(news_fragment([news_day(*old)]))
-        assert "No NVIDIA headlines in the last few days." in only_old
+        assert "No current, quarterly or annual report was filed" in only_old
+        assert "Buying" not in only_old
+
+    def test_the_list_looks_back_about_a_quarter(self) -> None:
+        # Filings are rare; a three-day list would nearly always be empty.
+        assert site_page.NEWS_DAYS_SHOWN == 90
 
     def test_newest_first_capped_and_without_duplicates_across_days(self) -> None:
-        many = [headline(hour, f"Headline {hour}") for hour in range(1, 13)]
-        repeat = headline(12, "Headline 12")
+        many = [headline(hour, f"Filing {hour}") for hour in range(1, 13)]
+        repeat = headline(12, "Filing 12")
         fragment = news_fragment([news_day(*many), news_day(repeat)])
         titles = re.findall(r'rel="noopener nofollow">([^<]+)</a>', fragment)
-        assert titles == [f"Headline {hour}" for hour in range(12, 4, -1)]
+        assert titles == [f"Filing {hour}" for hour in range(12, 4, -1)]
 
-    def test_markup_in_a_headline_is_shown_as_text_never_run(self) -> None:
+    def test_markup_in_a_title_is_shown_as_text_never_run(self) -> None:
         hostile = headline(9, '<script>alert(1)</script> "NVIDIA" <img src=x onerror=y>')
         fragment = news_fragment([news_day(hostile)])
         assert "<script>alert" not in fragment and "<img" not in fragment
@@ -572,22 +572,27 @@ class TestNews:
         assert 'onmouseover="x"' not in fragment
         assert "&quot;onmouseover=&quot;x" in fragment
 
-    def test_it_says_whose_words_these_are(self) -> None:
-        text = text_of(news_fragment([news_day(headline(9, "NVIDIA ships a thing"))]))
-        assert "Collected automatically on 19 Mar 2030, 11:00 UTC" in text
-        assert "their publishers' words, not this site's" in text
+    def test_it_says_whose_words_the_titles_are(self) -> None:
+        text = text_of(news_fragment([news_day(headline(9, "Form 8-K: current report"))]))
+        assert "Collected automatically on 19 Mar 2030, 11:00 UTC from SEC EDGAR" in text
+        assert "Forms 8-K, 10-Q and 10-K" in text
+        assert "this site's plain description of the form, not NVIDIA's or the SEC's words" in text
         assert "advice" not in text.lower()
 
-    def test_the_note_names_what_is_collected_and_links_to_the_newsroom(self) -> None:
-        fragment = news_fragment([news_day(headline(9, "NVIDIA ships a thing"))])
-        text = text_of(fragment)
-        assert "from NVIDIA's SEC filings (SEC EDGAR) and Yahoo Finance's NVDA news feed" in text
-        assert "NVIDIA's own press releases are on its newsroom" in text
-        assert ">its newsroom</a>.</p>" in fragment
-        assert (
-            '<a href="https://nvidianews.nvidia.com/" target="_blank" rel="noopener">' in fragment
-        )
-        assert "newsroom, SEC filings" not in text
+    def test_the_note_links_to_news_elsewhere_in_every_state(self) -> None:
+        for days in ([news_day(headline(9, "Form 8-K: current report"))], [news_day()]):
+            fragment = news_fragment(days)
+            text = text_of(fragment)
+            assert "News headlines are not collected: see Yahoo Finance's NVDA news page" in text
+            assert "for NVIDIA's own press releases, its newsroom" in text
+            assert (
+                '<a href="https://finance.yahoo.com/quote/NVDA/news/" target="_blank" '
+                'rel="noopener">Yahoo Finance\'s NVDA news page</a>'
+            ) in fragment
+            assert (
+                '<a href="https://nvidianews.nvidia.com/" target="_blank" rel="noopener">'
+                "its newsroom</a>.</p>"
+            ) in fragment
 
 
 class TestTrackRecord:

@@ -57,7 +57,6 @@ from markets_lab.analysis.nvda.prediction_log import (
 from markets_lab.analysis.nvda.volatility import backtest as volatility_backtest
 from markets_lab.collectors.nvda_news import (
     SOURCES,
-    YAHOO_RSS,
     Collection,
     NewsError,
     NewsItem,
@@ -68,9 +67,12 @@ from markets_lab.market_calendar import next_session
 GENERATED_DIR = "_generated"
 BUY_AND_HOLD = "always_up"
 SESSIONS_TO_TELL_55_FROM_50 = 385
-NEWS_DAYS_SHOWN = 3
+# Filings are rare (a few a quarter), so the list looks back about a quarter of
+# daily collections instead of a few days; otherwise it would usually be empty.
+NEWS_DAYS_SHOWN = 90
 NEWS_ITEMS_SHOWN = 8
 NVIDIA_NEWSROOM = "https://nvidianews.nvidia.com/"
+YAHOO_NVDA_NEWS = "https://finance.yahoo.com/quote/NVDA/news/"
 
 DISPLAY_NAMES = {
     "always_up": "Always up",
@@ -475,16 +477,15 @@ def _status(inner: str) -> str:
 
 
 def news_fragment(collections: Sequence[Collection]) -> str:
-    """The latest collected headlines, each linking to its publisher.
+    """NVIDIA's latest SEC filings, each linking to the filing on sec.gov.
 
-    Headlines are other people's words. They are escaped, shown as plain text and
-    labelled as such; nothing here is written or chosen by a person or a model.
-    Only sources still collected are shown (see `collectors.nvda_news`); items from
-    retired sources stay in their day files but never reach the page.
+    Only SEC EDGAR is shown (see `collectors.nvda_news`). Headlines collected from
+    other sources in the past stay in their day files but never reach the page:
+    news coverage is linked to in the note, not listed here.
     """
     if not collections:
         return _raw(
-            '<div class="panel muted">No headlines have been collected yet. They appear '
+            '<div class="panel muted">No filings have been collected yet. They appear '
             "here after the first daily run.</div>"
         )
     seen: dict[str, NewsItem] = {}
@@ -496,13 +497,16 @@ def news_fragment(collections: Sequence[Collection]) -> str:
     latest = latest[:NEWS_ITEMS_SHOWN]
     collected = max(collection.collected_at for collection in collections)
     if not latest:
-        body = '<div class="panel muted">No NVIDIA headlines in the last few days.</div>'
+        body = (
+            '<div class="panel muted">No current, quarterly or annual report was filed '
+            f"in the last {NEWS_DAYS_SHOWN} days of collection.</div>"
+        )
     else:
         rows = "".join(
             "<li>"
             f'<a href="{html.escape(item.url, quote=True)}" target="_blank" '
             f'rel="noopener nofollow">{html.escape(item.title)}</a>'
-            f'<span class="news-meta">{html.escape(_credit(item))} · '
+            f'<span class="news-meta">{html.escape(item.publisher)} · '
             f"{html.escape(_stamp(item.published_at))}</span>"
             "</li>"
             for item in latest
@@ -510,19 +514,16 @@ def news_fragment(collections: Sequence[Collection]) -> str:
         body = f'<ul class="news-list">{rows}</ul>'
     note = (
         html.escape(
-            f"Collected automatically on {_stamp(collected)} from NVIDIA's SEC filings "
-            "(SEC EDGAR) and Yahoo Finance's NVDA news feed. Headlines are their "
-            "publishers' words, not this site's, and are not checked or selected by a "
-            "person. NVIDIA's own press releases are on "
+            f"Collected automatically on {_stamp(collected)} from SEC EDGAR: NVIDIA's "
+            "current, quarterly and annual reports (Forms 8-K, 10-Q and 10-K). Each "
+            "title is this site's plain description of the form, not NVIDIA's or the "
+            "SEC's words. News headlines are not collected: see "
         )
+        + f'<a href="{YAHOO_NVDA_NEWS}" target="_blank" rel="noopener">'
+        + "Yahoo Finance's NVDA news page</a> and, for NVIDIA's own press releases, "
         + f'<a href="{NVIDIA_NEWSROOM}" target="_blank" rel="noopener">its newsroom</a>.'
     )
     return _raw(f'{body}<p class="muted small">{note}</p>')
-
-
-def _credit(item: NewsItem) -> str:
-    """Who to credit beside a headline: Yahoo's feed items are credited to Yahoo."""
-    return f"via {item.publisher}" if item.source == YAHOO_RSS else item.publisher
 
 
 def track_record_fragment(records: Sequence[Record]) -> str:
