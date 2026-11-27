@@ -690,6 +690,79 @@ a:hover {
   padding-top: 4rem;
 }
 
+// The backtests' three results at a glance, under the page title and its notice.
+// Neutral on purpose: text colour only, because green and red mean direction.
+// Nested so these rules outrank the hero's own paragraph style.
+.summary {
+  margin-top: 1.8rem;
+
+  p {
+    max-width: none;
+  }
+
+  .summary-label {
+    margin: 0 0 0.7rem;
+    font-family: $font-family-monospace;
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: $lab-text;
+  }
+
+  .summary-period,
+  .summary-topic {
+    color: $lab-muted;
+  }
+
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.9rem;
+  }
+
+  .summary-tile {
+    padding: 1rem 1.2rem 1.1rem;
+    border: 1px solid $lab-border;
+    border-radius: 16px;
+    background: $lab-panel;
+  }
+
+  .summary-topic {
+    margin: 0 0 0.45rem;
+    font-family: $font-family-monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .summary-number {
+    font-family: $font-family-monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: clamp(1.5rem, 3.2vw, 2.1rem);
+    font-weight: 700;
+    line-height: 1.15;
+    color: $lab-text;
+  }
+
+  .summary-text {
+    margin: 0.4rem 0 0;
+    font-size: 1rem;
+    line-height: 1.45;
+    color: $lab-text;
+  }
+
+  @media (max-width: 48rem) {
+    .summary-grid {
+      grid-template-columns: 1fr;
+      gap: 0.6rem;
+    }
+
+    .summary-tile {
+      padding: 0.8rem 1rem 0.9rem;
+    }
+  }
+}
+
 .small {
   font-size: 0.88rem;
 }

@@ -20,6 +20,8 @@ sell anything. The calls below are published so they can be scored, not so they 
 be followed.
 :::
 
+{{< include /_generated/summary.md >}}
+
 :::::
 ::::::
 

@@ -478,6 +478,124 @@ class TestStancePanel:
                 assert colour not in block, (selector, colour)
 
 
+REPORTS = Path(__file__).parents[1] / "reports"
+
+
+def real_reports() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    """The three published reports (aggregates only), as the site build reads them."""
+    names = ("nvda_backtest", "nvda_volatility", "nvda_paper_strategy")
+    one, two, three = (json.loads((REPORTS / f"{name}.json").read_text()) for name in names)
+    return one, two, three
+
+
+class TestSummaryTiles:
+    """The three tiles under the page title. My condition (2026-11-26): their text is
+    generated from the reports, so it cannot drift from the numbers further down."""
+
+    def test_the_published_reports_give_these_three_tiles(self) -> None:
+        tiles = site_page.summary_tiles(*real_reports())
+        assert [(tile.topic, tile.number, tile.text) for tile in tiles] == [
+            ("Which way", "0 of 6", "models beat always calling up on accuracy."),
+            (
+                "How big a move",
+                "79.9%",
+                "of past moves fell inside the simple baseline's 80% ranges. "
+                "None of the models clearly beat it.",
+            ),
+            (
+                "Paper strategy",
+                "0.81 vs 0.90",
+                "risk-adjusted return (Sharpe ratio) against buy-and-hold's: "
+                "no detectable difference.",
+            ),
+        ]
+
+    def test_each_number_is_the_one_its_own_section_shows(self) -> None:
+        backtest, volatility, paper = real_reports()
+        direction, ranges, strategy = site_page.summary_tiles(backtest, volatility, paper)
+        assert (
+            f'<div class="big-number">{direction.number}</div>'
+            '<p class="muted">models beat always calling up</p>'
+        ) in backtest_fragment(backtest)
+        assert (
+            f'<div class="big-number">{ranges.number}</div>'
+            in site_page.range_backtest_fragment(volatility)
+        )
+        ours, theirs = strategy.number.split(" vs ")
+        assert f"a Sharpe ratio of {ours} against {theirs}" in site_page.paper_finding(paper)
+
+    def test_the_direction_tile_follows_the_intervals(self, report: dict[str, Any]) -> None:
+        none = site_page.direction_summary(with_intervals(report, (-0.02, 0.01), (-0.1, 0.1)))
+        assert none is not None and none.number == "0 of 1"
+        touching = site_page.direction_summary(with_intervals(report, (0.0, 0.03), (0.0, 0.1)))
+        assert touching is not None and touching.number == "0 of 1"
+        won = site_page.direction_summary(with_intervals(report, (0.01, 0.03), (0.01, 0.1)))
+        assert won is not None and (won.number, won.text) == (
+            "1 of 1",
+            "model beat always calling up on accuracy.",
+        )
+
+    def test_the_range_tile_follows_the_intervals(self, volatility: dict[str, Any]) -> None:
+        coverage = volatility["forecasters"]["ewma_94"]["coverage"]
+        same = site_page.range_summary(with_verdicts(volatility))
+        assert same is not None and same.number == f"{100 * coverage:.1f}%"
+        one_score = site_page.range_summary(with_verdicts(volatility, har=("better", "same")))
+        assert one_score is not None and one_score.text.endswith(
+            "None of the models clearly beat it."
+        )
+        both = site_page.range_summary(with_verdicts(volatility, har=("better", "better")))
+        assert both is not None and both.text.endswith("One of the models clearly beat it.")
+
+    @pytest.mark.parametrize(
+        ("low", "high", "words"),
+        [
+            (-0.4, 0.2, "no detectable difference"),
+            (0.1, 0.4, "measurably better"),
+            (-0.4, -0.1, "measurably worse"),
+        ],
+    )
+    def test_the_paper_tile_follows_the_reports_verdict(
+        self, low: float, high: float, words: str
+    ) -> None:
+        tile = site_page.paper_summary(with_paper_verdict(low, high))
+        assert tile.text == f"risk-adjusted return (Sharpe ratio) against buy-and-hold's: {words}."
+        assert set(site_page.PAPER_VERDICTS) == {
+            paper_backtest.verdict(interval) for interval in ([-0.4, 0.2], [0.1, 0.4], [-0.4, -0.1])
+        }
+
+    def test_the_fragment_shows_every_tile_and_the_tested_period(self) -> None:
+        backtest, volatility, paper = real_reports()
+        fragment = site_page.summary_fragment(backtest, volatility, paper)
+        text = text_of(fragment)
+        assert "What the backtest found · 5,541 past sessions, 2004 to 2026" in text
+        for tile in site_page.summary_tiles(backtest, volatility, paper):
+            assert f'<div class="summary-number">{html.escape(tile.number)}</div>' in fragment
+            assert f'<p class="summary-text">{html.escape(tile.text)}</p>' in fragment
+        assert fragment.count('class="summary-tile"') == 3
+
+    def test_the_period_is_stated_only_when_every_report_covers_the_same_one(self) -> None:
+        backtest, volatility, paper = real_reports()
+        paper["data"]["tested_sessions"] -= 1
+        text = text_of(site_page.summary_fragment(backtest, volatility, paper))
+        assert "What the backtest found" in text and "past sessions" not in text
+
+    def test_it_is_neutral_and_its_numbers_are_not_animated(self) -> None:
+        fragment = site_page.summary_fragment(*real_reports())
+        no_action_words(fragment)  # no direction classes, arrows or count-up numbers
+        theme = (Path(__file__).parents[1] / "site" / "theme.scss").read_text()
+        found = re.search(r"^\.summary \{(.*?)^\}", theme, re.M | re.S)
+        assert found is not None
+        for colour in ("$lab-green", "$lab-red", "$lab-accent", "$lab-lime"):
+            assert colour not in found.group(1), colour
+
+    def test_it_is_built_with_the_page(
+        self, report: dict[str, Any], volatility: dict[str, Any]
+    ) -> None:
+        built = build_fragments(report, log_records(), volatility=volatility)
+        assert built["summary.md"] == site_page.summary_fragment(report, volatility)
+        assert built["summary.md"].count('class="summary-tile"') == 2  # no paper report given
+
+
 class TestStatusStrip:
     def test_before_the_log_starts(self) -> None:
         text = text_of(status_fragment([]))
@@ -884,7 +1002,7 @@ class TestWhatIsPublished:
         mixed = build_fragments(report, with_ranges, volatility=volatility)
         plain = build_fragments(report, log_records(), volatility=volatility)
         about_direction = [name for name in plain if not name.startswith("range")]
-        assert len(about_direction) == 6
+        assert len(about_direction) == 7  # the summary is built from reports only
         range_tile = (
             r'<div class="stance-tile"><div class="stance-number">[^<]*</div>'
             r"<p>the simple baseline&#x27;s 80% range[^<]*</p></div>"
@@ -913,6 +1031,7 @@ class TestWhatIsPublished:
         fragments = build_fragments(report, [*log_records(), *[]], volatility=volatility)
         assert set(fragments) == {
             "plotly.md",
+            "summary.md",
             "status.md",
             "news.md",
             "tomorrow.md",
@@ -1593,6 +1712,7 @@ class TestCommandLine:
             "range_backtest.md",
             "range_record.md",
             "status.md",
+            "summary.md",
             "tomorrow.md",
             "track_record.md",
             "updated.md",

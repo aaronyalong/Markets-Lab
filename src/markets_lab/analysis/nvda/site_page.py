@@ -261,6 +261,136 @@ def _was(k: int) -> str:
 # ---------------------------------------------------------------------- fragments
 
 
+def models_that_beat_always_up(report: Mapping[str, Any]) -> list[str]:
+    """Models whose accuracy beat always calling up in the backtest: the whole 95%
+    interval of the difference is above zero. The one place that count comes from."""
+    models = [name for name, row in report["predictors"].items() if row["kind"] == "model"]
+    gaps = {
+        row["predictor"]: row["accuracy_difference_interval"]
+        for row in report["comparisons"]
+        if row["reference"] == BUY_AND_HOLD
+    }
+    return [name for name in models if gaps[name][0] > 0]
+
+
+# ------------------------------------------------------------- summary of results
+
+
+@dataclass(frozen=True, slots=True)
+class SummaryTile:
+    """One backtest result for the top of the page: a number and what it means."""
+
+    topic: str
+    number: str
+    text: str
+
+
+def direction_summary(report: Mapping[str, Any]) -> SummaryTile | None:
+    """How many models beat always calling up, from the report's intervals."""
+    models = [name for name, row in report["predictors"].items() if row["kind"] == "model"]
+    if not models:
+        return None
+    beat = len(models_that_beat_always_up(report))
+    noun = "model" if len(models) == 1 else "models"
+    return SummaryTile(
+        "Which way",
+        f"{beat} of {len(models)}",
+        f"{noun} beat always calling up on accuracy.",
+    )
+
+
+def range_summary(report: Mapping[str, Any]) -> SummaryTile | None:
+    """How well the simple baseline's ranges held, and whether any model beat it."""
+    forecasters: Mapping[str, Any] = report["forecasters"]
+    headline = forecasters.get(HEADLINE_FORECASTER)
+    if headline is None:
+        return None
+    text = f"of past moves fell inside the simple baseline's {report['range_level']:.0%} ranges."
+    models = [name for name, row in forecasters.items() if row["kind"] == "model"]
+    if models:
+        winners = len(clearly_beat_the_baseline(report))
+        text += f" {_share_of(winners, len(models), 'models')} clearly beat it."
+    return SummaryTile("How big a move", _percent(headline["coverage"]), text)
+
+
+PAPER_VERDICTS = {
+    "better": "measurably better",
+    "worse": "measurably worse",
+    "no detectable difference": "no detectable difference",
+}
+
+
+def paper_summary(report: Mapping[str, Any]) -> SummaryTile:
+    """The paper strategy's Sharpe ratio beside buy-and-hold's, with the report's
+    own verdict on the difference."""
+    cost = str(report["primary_cost_bps"])
+    ours = report["strategies"][PAPER_STRATEGY]["by_cost_bps"][cost]["sharpe_ratio"]
+    theirs = report["strategies"][PAPER_BENCHMARK]["by_cost_bps"][cost]["sharpe_ratio"]
+    row = next(r for r in report["comparisons"] if r["strategy"] == PAPER_STRATEGY)
+    return SummaryTile(
+        "Paper strategy",
+        f"{ours:.2f} vs {theirs:.2f}",
+        "risk-adjusted return (Sharpe ratio) against buy-and-hold's: "
+        f"{PAPER_VERDICTS[row['verdict']]}.",
+    )
+
+
+def summary_tiles(
+    report: Mapping[str, Any],
+    volatility: Mapping[str, Any],
+    paper: Mapping[str, Any] | None = None,
+) -> list[SummaryTile]:
+    """The backtests' results in at most three tiles: direction, range, strategy."""
+    tiles = [direction_summary(report), range_summary(volatility)]
+    if paper is not None:
+        tiles.append(paper_summary(paper))
+    return [tile for tile in tiles if tile is not None]
+
+
+def summary_fragment(
+    report: Mapping[str, Any],
+    volatility: Mapping[str, Any],
+    paper: Mapping[str, Any] | None = None,
+) -> str:
+    """The tiles under the page title. Every number and verdict is worked out from
+    the reports here, so the top of the page cannot drift from the sections below.
+
+    Neutral by design, like the stance panel: text colour only, no arrows.
+    """
+    tiles = summary_tiles(report, volatility, paper)
+    if not tiles:
+        return _raw("")
+    periods = {
+        (
+            source["data"]["tested_sessions"],
+            source["data"]["first_tested_session"][:4],
+            source["data"]["last_tested_session"][:4],
+        )
+        for source in (report, volatility, paper)
+        if source is not None
+    }
+    label = "What the backtest found"
+    if len(periods) == 1:  # say the period only when every report covers the same one
+        ((count, first, last),) = periods
+        label += (
+            f' <span class="summary-period">· {count:,} past sessions, {first} to {last}</span>'
+        )
+    markup = "".join(
+        '<div class="summary-tile">'
+        f'<p class="summary-topic">{html.escape(tile.topic)}</p>'
+        f'<div class="summary-number">{html.escape(tile.number)}</div>'
+        f'<p class="summary-text">{html.escape(tile.text)}</p>'
+        "</div>"
+        for tile in tiles
+    )
+    return _raw(
+        '<div class="summary" role="group" aria-label="What the backtest found">'
+        f'<p class="summary-label">{label}</p>'
+        f'<div class="summary-grid">{markup}</div>'
+        "</div>"
+    )
+
+
 def stance_panel(records: Sequence[Record], report: Mapping[str, Any]) -> str:
     """Where the models stand on the latest session, with the backtest beside it.
 
@@ -598,7 +728,7 @@ def backtest_fragment(report: Mapping[str, Any]) -> str:
     versus_hold = {
         row["predictor"]: row for row in report["comparisons"] if row["reference"] == BUY_AND_HOLD
     }
-    beat = sum(1 for m in models if versus_hold[m]["accuracy_difference_interval"][0] > 0)
+    beat = len(models_that_beat_always_up(report))
     first, last = data["first_tested_session"][:4], data["last_tested_session"][:4]
     tiles = "".join(
         f'<div class="stat"><div class="big-number">{value}</div><p class="muted">{label}</p></div>'
@@ -1355,6 +1485,7 @@ def build_fragments(
     return {
         **paper_fragments,
         "plotly.md": plotly_loader_fragment(),
+        "summary.md": summary_fragment(report, volatility, paper),
         "status.md": status_fragment(records),
         "news.md": news_fragment(news),
         "tomorrow.md": tomorrow_fragment(records, report),

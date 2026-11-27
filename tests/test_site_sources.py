@@ -256,6 +256,7 @@ def test_nvidia_page_has_the_chart_the_notice_and_every_generated_section() -> N
     assert page.count("An experiment, not advice.") == 1
     assert page.lower().count("advice") == 1
     for fragment in (
+        "summary",
         "status",
         "news",
         "plotly",
@@ -268,6 +269,9 @@ def test_nvidia_page_has_the_chart_the_notice_and_every_generated_section() -> N
         "updated",
     ):
         assert f"{{{{< include /_generated/{fragment}.md >}}}}" in page
+    # The summary sits in the hero, after the notice and before the status strip.
+    hero = page[page.index("{.page-hero}") : page.index("_generated/status.md")]
+    assert hero.index("An experiment, not advice.") < hero.index("_generated/summary.md")
     # The chart library must be loaded before the first chart on the page.
     assert page.index("_generated/plotly.md") < page.index("_generated/track_record.md")
     # The chart library must also come before the range chart further down.
