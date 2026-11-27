@@ -13,10 +13,15 @@ from typing import Any
 
 import pytest
 
+from context_frames import make_context, make_publications
 from markets_lab.analysis.nvda import site_page
 from markets_lab.analysis.nvda.backtest import run_backtest
+from markets_lab.analysis.nvda.baselines import AlwaysUp, MovingAverageRule, Persistence
+from markets_lab.analysis.nvda.context_features import build_context_dataset
 from markets_lab.analysis.nvda.features import build_dataset
 from markets_lab.analysis.nvda.metrics import BootstrapConfig, wilson_interval
+from markets_lab.analysis.nvda.paper_strategy import backtest as paper_backtest
+from markets_lab.analysis.nvda.paper_strategy.rule import RULE_MODELS
 from markets_lab.analysis.nvda.prediction_log import (
     Outcome,
     PaperStrategyEntry,
@@ -41,7 +46,10 @@ from markets_lab.analysis.nvda.site_page import (
 )
 from markets_lab.analysis.nvda.validation import WalkForwardConfig
 from markets_lab.analysis.nvda.volatility import backtest as volatility_backtest
-from markets_lab.analysis.nvda.volatility.dataset import build_volatility_dataset
+from markets_lab.analysis.nvda.volatility.dataset import (
+    build_volatility_dataset,
+    compute_ewma_volatility,
+)
 from markets_lab.collectors.nvda_news import EDGAR, YAHOO_RSS, Collection, NewsItem, save_day
 from nvda_test_predictors import LeastSquaresLearner
 from price_frames import at, make_prices
@@ -76,6 +84,28 @@ def volatility_report() -> dict[str, Any]:
     """The volatility backtest's report on made-up prices, with every forecaster."""
     return volatility_backtest.run_backtest(
         build_volatility_dataset(make_prices(rows=900)),
+        config=WalkForwardConfig(initial_train_sessions=300, refit_every=50),
+        bootstrap=BootstrapConfig(n_resamples=100),
+    )
+
+
+@functools.cache
+def paper_report() -> dict[str, Any]:
+    """The paper strategy's backtest report on made-up prices, with stand-in models."""
+    rows = 900
+    prices = make_prices(rows=rows)
+    dataset = build_context_dataset(
+        prices, make_context(rows), make_publications(), as_of=at("2030-03-14 22:30")
+    )
+    return paper_backtest.run_paper_backtest(
+        dataset,
+        compute_ewma_volatility(prices),
+        models={"logistic": LeastSquaresLearner, "xgboost": Persistence, "lstm": AlwaysUp},
+        context_models={
+            "logistic_ctx": LeastSquaresLearner,
+            "xgboost_ctx": MovingAverageRule,
+            "lstm_ctx": Persistence,
+        },
         config=WalkForwardConfig(initial_train_sessions=300, refit_every=50),
         bootstrap=BootstrapConfig(n_resamples=100),
     )
@@ -1132,11 +1162,295 @@ class TestPhoneTables:
         assert "thead {" in phone and "clip-path: inset(50%)" in phone
 
 
+def six(day: date, up: int, *, without: str | None = None) -> list[Record]:
+    """A call from each of the paper strategy's six models; the first `up` say up."""
+    return [
+        call(day, name, position < up, 0.56 if position < up else 0.44)
+        for position, name in enumerate(RULE_MODELS)
+        if name != without
+    ]
+
+
+def paper_entry(day: date, up: int, *, gate: bool = True) -> PaperStrategyEntry:
+    return PaperStrategyEntry(at(f"{day} 18:00"), day, up >= 4 and gate, up, gate)
+
+
+def paper_log() -> list[Record]:
+    """Thursday: Holding, and Friday closed up. Friday night: one call missing, so
+    no entry; Monday closed up. Monday: In cash (gate closed), not scored yet."""
+    return [
+        *six(THU, 5),
+        paper_entry(THU, 5),
+        went(FRI, THU, True),
+        *six(FRI, 6, without="lstm_ctx"),
+        went(MON, FRI, True),
+        *six(MON, 6),
+        paper_entry(MON, 6, gate=False),
+    ]
+
+
+def with_paper_verdict(low: float, high: float) -> dict[str, Any]:
+    """The paper report with the primary interval replaced."""
+    changed = copy.deepcopy(paper_report())
+    row = next(r for r in changed["comparisons"] if r["strategy"] == "paper_strategy")
+    row["sharpe_difference_interval"] = [low, high]
+    row["verdict"] = paper_backtest.verdict([low, high])
+    return changed
+
+
+def no_action_words(fragment: str) -> None:
+    """Nothing in the fragment reads as an instruction or uses direction colours."""
+    assert not re.search(r'class="[^"]*\b(up|down)\b', fragment)
+    assert "▲" not in fragment and "▼" not in fragment
+    assert "big-number" not in fragment
+    words = text_of(fragment).lower().replace("buy-and-hold", "")
+    for word in ("buy", "sell", "signal", "recommend", "should", "consider"):
+        assert not re.search(rf"\b{word}", words), word
+
+
+class TestPaperStrategyPage:
+    def test_the_names_match_the_backtests(self) -> None:
+        assert site_page.PAPER_STRATEGY == paper_backtest.STRATEGY
+        assert site_page.PAPER_BENCHMARK == paper_backtest.BENCHMARK
+        assert set(site_page.PAPER_NAMES) == {
+            paper_backtest.STRATEGY,
+            paper_backtest.BENCHMARK,
+            *paper_backtest.PARTS,
+        }
+        assert list(paper_report()["strategies"]) == list(site_page.PAPER_NAMES)
+
+    def test_before_the_first_entry(self) -> None:
+        fragment = site_page.paper_fragment(log_records(), paper_report())
+        assert "has not made an entry yet" in text_of(fragment)
+        assert html.escape(site_page.paper_finding(paper_report())) in fragment
+
+    @pytest.mark.parametrize(
+        ("up", "gate", "state", "detail"),
+        [
+            (5, True, "Holding", "5 of 6 models say up; the volatility gate is open."),
+            (3, True, "In cash", "3 of 6 models say up; the volatility gate is open."),
+            (6, False, "In cash", "6 of 6 models say up; the volatility gate is closed."),
+        ],
+    )
+    def test_the_state_for_the_next_session(
+        self, up: int, gate: bool, state: str, detail: str
+    ) -> None:
+        records = [*six(MON, up), paper_entry(MON, up, gate=gate)]
+        fragment = site_page.paper_fragment(records, paper_report())
+        text = text_of(fragment)
+        assert f'<div class="paper-state">{state}</div>' in fragment
+        assert detail in text
+        assert "Paper strategy for Tuesday 19 March 2030" in text
+        assert "Not scored yet." in text
+        assert site_page.ADVICE_TAG in fragment  # beside the state, as for the calls
+        assert "Simulated · no money involved" in text
+        no_action_words(fragment)
+
+    def test_a_session_with_a_call_missing_says_no_entry(self) -> None:
+        # Through Friday night: five of the six called, so Friday has no entry.
+        fragment = site_page.paper_fragment(paper_log()[:13], paper_report())
+        text = text_of(fragment)
+        assert "Paper strategy for Monday 18 March 2030" in text
+        assert '<div class="paper-state">No entry for this session</div>' in fragment
+        assert "no call from LSTM + context" in text
+        assert "left out of both the paper strategy and the buy-and-hold comparison" in text
+        assert "Holding</div>" not in fragment and "In cash</div>" not in fragment
+        no_action_words(fragment)
+
+    def test_once_scored_it_says_which_way_the_session_closed(self) -> None:
+        fragment = site_page.paper_fragment(paper_log()[:8], paper_report())
+        text = text_of(fragment)
+        assert "Paper strategy for Friday 15 March 2030" in text
+        assert '<div class="paper-state">Holding</div>' in fragment
+        assert "5 of 6 models said up; the volatility gate was open." in text
+        assert "That session closed up." in text
+        assert "Not scored yet." not in text
+
+    @pytest.mark.parametrize(
+        ("low", "high", "expected"),
+        [
+            (-0.39, 0.21, "was no better than buy-and-hold's"),
+            (0.05, 0.4, "had a better risk-adjusted return than buy-and-hold"),
+            (-0.4, -0.05, "had a worse risk-adjusted return than buy-and-hold"),
+        ],
+    )
+    def test_the_finding_is_worded_from_the_interval(
+        self, low: float, high: float, expected: str
+    ) -> None:
+        sentence = site_page.paper_finding(with_paper_verdict(low, high))
+        assert sentence.startswith("In the backtest the paper strategy")
+        assert expected in sentence
+        assert ("cannot be told apart from zero" in sentence) == (low < 0 < high)
+        assert f"{abs(low):.2f}" in sentence and f"{abs(high):.2f}" in sentence
+
+    def test_the_finding_sits_in_the_panel_in_full_text(self) -> None:
+        fragment = site_page.paper_fragment(paper_log(), paper_report())
+        finding = html.escape(site_page.paper_finding(paper_report()))
+        assert f'<p class="paper-finding">{finding}</p>' in fragment
+
+
+class TestPaperStrategyRecord:
+    def test_before_the_first_entry(self) -> None:
+        fragment = site_page.paper_record_fragment(log_records())
+        assert "The paper strategy has no entries yet." in fragment
+
+    def test_counts_on_the_same_sessions_with_the_missed_ones_beside_them(self) -> None:
+        fragment = site_page.paper_record_fragment(paper_log())
+        text = text_of(fragment)
+        assert "1 session has both an entry and an outcome so far." in text
+        rows = table_rows(fragment)
+        # One session compared on both rows: Friday's. Monday's had no entry, so
+        # its rise is not counted for buy-and-hold either.
+        assert rows["Paper strategy"][1:3] == ["1", "1"]
+        assert rows["Buy-and-hold"][1:3] == ["1", "1"]
+        assert "Sessions with no entry: 1. It is left out of both rows." in text
+        assert "Holding on 1 of the 1 (1 closed up); In cash on 0 (0 did not close up)." in text
+
+    def test_the_missed_count_is_as_readable_as_the_counts(self) -> None:
+        fragment = site_page.paper_record_fragment(paper_log())
+        line = re.search(r'<p class="([^"]*)">Sessions with no entry', fragment)
+        assert line is not None and line.group(1) == "paper-missed"  # not muted, not small
+
+    def test_no_missed_sessions_says_zero(self) -> None:
+        records = [*six(THU, 5), paper_entry(THU, 5), went(FRI, THU, False)]
+        text = text_of(site_page.paper_record_fragment(records))
+        assert "Sessions with no entry: 0." in text and "left out" not in text
+        rows = table_rows(site_page.paper_record_fragment(records))
+        assert rows["Paper strategy"][2] == "0" and rows["Buy-and-hold"][2] == "0"
+
+    def test_the_two_sentences_about_counts_are_beside_them(self) -> None:
+        fragment = site_page.paper_record_fragment(paper_log())
+        assert site_page.LIVE_COUNT_NOTES == (
+            "These are counts, not returns: a right-side day counts the same whether the "
+            "move was large or small, so they can't be compared with the Sharpe ratio in "
+            "the backtest.",
+            "Risk-adjusted return, total return and worst drawdown are measured in the "
+            "backtest only, and this record needs about a year of sessions before it says "
+            "much.",
+        )
+        for sentence in site_page.LIVE_COUNT_NOTES:
+            assert f"<p>{html.escape(sentence)}</p>" in fragment
+
+    def test_it_shows_no_return_figures(self) -> None:
+        text = text_of(site_page.paper_record_fragment(paper_log())).lower()
+        for word in ("sharpe ratio of", "per year", "total return of", "worst fall"):
+            assert word not in text
+        no_action_words(site_page.paper_record_fragment(paper_log()))
+
+    def test_nothing_scored_yet_shows_no_share(self) -> None:
+        records = [*six(THU, 5), paper_entry(THU, 5)]
+        fragment = site_page.paper_record_fragment(records)
+        assert "0 sessions have both an entry and an outcome so far." in text_of(fragment)
+        assert table_rows(fragment)["Paper strategy"][3] == "n/a"
+        assert "Holding on" not in fragment
+
+
+class TestPaperStrategyBacktest:
+    def test_findings_table_and_every_strategy(self) -> None:
+        report = paper_report()
+        fragment = site_page.paper_backtest_fragment(report)
+        for line in site_page.paper_findings(report):
+            assert html.escape(line) in fragment
+        rows = table_rows(fragment)
+        assert list(rows) == ["Paper strategy", "Buy-and-hold", "Majority alone", "Gate alone"]
+        five = report["strategies"]["paper_strategy"]["by_cost_bps"]["5"]
+        assert rows["Paper strategy"][2].startswith(f"{five['sharpe_ratio']:.2f}")
+        assert "benchmark" in rows["Buy-and-hold"][3]
+        assert rows["Buy-and-hold"][1] == "100.0%"
+        assert rows["Paper strategy"][6] == f"{100 * abs(five['worst_drawdown']):.1f}%"
+
+    def test_the_first_finding_is_the_primary_one(self) -> None:
+        report = paper_report()
+        assert site_page.paper_findings(report)[0] == site_page.paper_finding(report)
+
+    def test_findings_cover_what_was_promised(self) -> None:
+        text = " ".join(site_page.paper_findings(paper_report()))
+        for phrase in (
+            "Sharpe ratio",
+            "a year against",
+            "worst fall",
+            "Holding on",
+            "gate was open",
+        ):
+            assert phrase in text, phrase
+
+    def with_gate(self, **changes: Any) -> dict[str, Any]:
+        """The paper report with a gate that plainly was held open by its early history."""
+        report = copy.deepcopy(paper_report())
+        report["data"]["share_gate_open"] = 0.95
+        report["data"]["share_same_position_as_majority"] = 0.983
+        report["gate"] = {
+            "first_history_session": "1999-11-04",
+            "first_tested_session": "2004-11-10",
+            "threshold_first_fold": 0.0684,
+            "threshold_last_fold": 0.0429,
+            "median_forecast_tested": 0.0253,
+            "history_share_before_first_tested_session": 0.186,
+            "share_of_values_above_final_threshold_from_before_first_tested_session": 0.575,
+            "check_warm_up_sessions": 252,
+            "check_share_open_with_history_from_first_tested_session": 0.774,
+            "check_sessions": 5289,
+            **changes,
+        }
+        return report
+
+    def test_the_gate_finding_gives_the_number_and_says_what_it_means(self) -> None:
+        lines = site_page.paper_findings(self.with_gate())
+        assert (
+            "The volatility gate was open on 95.0% of sessions, so it rarely closed: the "
+            "strategy held the same position as the models' majority alone on 98.3% of "
+            "sessions. In practice it is close to the majority rule alone."
+        ) in lines
+
+    def test_the_cause_is_stated_with_the_checked_numbers(self) -> None:
+        assert site_page.gate_cause(self.with_gate()) == (
+            "The reason was checked. The gate's threshold comes from every earlier session, "
+            "and those begin in 1999: the sessions before November 2004 are 18.6% of that "
+            "history but 57.5% of its values above the final threshold. The threshold fell "
+            "from 6.8% to 4.3% daily volatility over the test, while the typical forecast was "
+            "2.5%. With a history starting in November 2004 instead, the same gate would have "
+            "been open on 77.4% of sessions."
+        )
+
+    @pytest.mark.parametrize(
+        "changes",
+        [
+            # The check barely differs from what happened.
+            {"check_share_open_with_history_from_first_tested_session": 0.93},
+            # The early sessions hold no more than their share of the high values.
+            {"share_of_values_above_final_threshold_from_before_first_tested_session": 0.15},
+        ],
+    )
+    def test_no_cause_is_claimed_when_the_check_does_not_support_it(
+        self, changes: dict[str, float]
+    ) -> None:
+        sentence = site_page.gate_cause(self.with_gate(**changes))
+        assert sentence.startswith("Why it closed that rarely is not explained by the early")
+        assert "The reason was checked" not in sentence
+
+    def test_without_a_check_nothing_is_said_about_the_cause(self) -> None:
+        report = self.with_gate(check_share_open_with_history_from_first_tested_session=None)
+        assert site_page.gate_cause(report) == ""
+        assert not any("reason" in line.lower() for line in site_page.paper_findings(report))
+
+    def test_values_are_labelled_for_phones(self) -> None:
+        ((headings, rows),) = table_labels(site_page.paper_backtest_fragment(paper_report()))
+        assert len(headings) == 7
+        for labels in rows:
+            assert labels[0] is None and all(labels[1:]) and len(labels) == 7
+        ((_, record_rows),) = table_labels(site_page.paper_record_fragment(paper_log()))
+        assert all(labels[0] is None and all(labels[1:]) for labels in record_rows)
+
+    def test_nothing_reads_as_an_instruction(self) -> None:
+        no_action_words(site_page.paper_backtest_fragment(paper_report()))
+
+
 class TestCommandLine:
     def write_report(self, root: Path, report: dict[str, Any]) -> None:
         (root / "reports").mkdir()
         (root / "reports" / "nvda_backtest.json").write_text(json.dumps(report))
         (root / "reports" / "nvda_volatility.json").write_text(json.dumps(volatility_report()))
+        (root / "reports" / "nvda_paper_strategy.json").write_text(json.dumps(paper_report()))
 
     def test_writes_every_fragment_without_a_log(
         self, tmp_path: Path, report: dict[str, Any]
@@ -1149,6 +1463,9 @@ class TestCommandLine:
         assert written == [
             "backtest.md",
             "news.md",
+            "paper.md",
+            "paper_backtest.md",
+            "paper_record.md",
             "plotly.md",
             "range.md",
             "range_backtest.md",
@@ -1197,6 +1514,16 @@ class TestCommandLine:
         lines: list[str] = []
         assert main(["--site-dir", str(tmp_path / "site")], report=lines.append) == 1
         assert "run the backtest first" in lines[0]
+
+    def test_missing_paper_strategy_report_fails(
+        self, tmp_path: Path, report: dict[str, Any]
+    ) -> None:
+        self.write_report(tmp_path, report)
+        (tmp_path / "reports" / "nvda_paper_strategy.json").unlink()
+        (tmp_path / "site").mkdir()
+        lines: list[str] = []
+        assert main(["--site-dir", str(tmp_path / "site")], report=lines.append) == 1
+        assert "run the paper strategy backtest first" in lines[0]
 
     def test_missing_volatility_report_fails(self, tmp_path: Path, report: dict[str, Any]) -> None:
         self.write_report(tmp_path, report)

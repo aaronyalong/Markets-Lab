@@ -36,13 +36,21 @@ from plotly.offline import get_plotlyjs_version
 
 from markets_lab.analysis.nvda.baselines import default_baselines
 from markets_lab.analysis.nvda.metrics import wilson_interval
+from markets_lab.analysis.nvda.paper_strategy.live import live_record
+from markets_lab.analysis.nvda.paper_strategy.rule import (
+    MIN_MODELS_UP,
+    RULE_MODELS,
+    state_name,
+)
 from markets_lab.analysis.nvda.prediction_log import (
     ABOVE,
     BELOW,
     INSIDE,
     LogError,
+    Prediction,
     Record,
     read_log,
+    scored_paper_strategy,
     scored_predictions,
     scored_ranges,
 )
@@ -927,6 +935,374 @@ def range_backtest_fragment(report: Mapping[str, Any]) -> str:
     )
 
 
+# ------------------------------------------------------------------ paper strategy
+
+PAPER_STRATEGY, PAPER_BENCHMARK = "paper_strategy", "buy_and_hold"
+PAPER_NAMES = {
+    PAPER_STRATEGY: "Paper strategy",
+    PAPER_BENCHMARK: "Buy-and-hold",
+    "majority_only": "Majority alone",
+    "gate_only": "Gate alone",
+}
+PAPER_DESCRIPTIONS = {
+    PAPER_STRATEGY: f"Holding when at least {MIN_MODELS_UP} of the {len(RULE_MODELS)} models "
+    "say up and the volatility gate is open.",
+    PAPER_BENCHMARK: "Holding every session: the benchmark.",
+    "majority_only": "Part of the rule, for explanation: the models' majority without the gate.",
+    "gate_only": "Part of the rule, for explanation: the gate without the models.",
+}
+NO_ENTRY = "No entry for this session"
+PAPER_TAG = '<span class="tag">Simulated · no money involved</span>'
+
+LIVE_COUNT_NOTES = (
+    "These are counts, not returns: a right-side day counts the same whether the move was "
+    "large or small, so they can't be compared with the Sharpe ratio in the backtest.",
+    "Risk-adjusted return, total return and worst drawdown are measured in the backtest "
+    "only, and this record needs about a year of sessions before it says much.",
+)
+"""The two sentences shown beside the live counts, in the wording I was given."""
+
+
+def paper_finding(report: Mapping[str, Any]) -> str:
+    """The backtest's primary result for the paper strategy, in one plain sentence.
+
+    "Better" or "worse" only when the whole 95% interval of the Sharpe ratio
+    difference is above or below zero, as the report's own verdict has it.
+    """
+    cost = str(report["primary_cost_bps"])
+    ours = report["strategies"][PAPER_STRATEGY]["by_cost_bps"][cost]["sharpe_ratio"]
+    theirs = report["strategies"][PAPER_BENCHMARK]["by_cost_bps"][cost]["sharpe_ratio"]
+    row = next(r for r in report["comparisons"] if r["strategy"] == PAPER_STRATEGY)
+    low, high = row["sharpe_difference_interval"]
+    numbers = (
+        f"a Sharpe ratio of {ours:.2f} against {theirs:.2f}, a difference of "
+        f"{_plain_signed(row['sharpe_difference'])} (95% interval {_plain_signed(low)} to "
+        f"{_plain_signed(high)})"
+    )
+    if row["verdict"] == "better":
+        return (
+            "In the backtest the paper strategy had a better risk-adjusted return than "
+            f"buy-and-hold: {numbers}."
+        )
+    if row["verdict"] == "worse":
+        return (
+            "In the backtest the paper strategy had a worse risk-adjusted return than "
+            f"buy-and-hold: {numbers}."
+        )
+    return (
+        "In the backtest the paper strategy's risk-adjusted return was no better than "
+        f"buy-and-hold's: {numbers}, which cannot be told apart from zero."
+    )
+
+
+def paper_fragment(records: Sequence[Record], report: Mapping[str, Any]) -> str:
+    """The paper strategy's state for the latest session, labelled as an experiment.
+
+    Neutral by design: the two states are words in the text colour, with no green
+    or red, no arrow and nothing that reads as an instruction. A session where one
+    of the six models made no call says so instead of showing a state.
+    """
+    finding = f'<p class="paper-finding">{html.escape(paper_finding(report))}</p>'
+    entries = scored_paper_strategy(records)
+    calls = scored_predictions(records)
+    if entries.empty or calls.empty:
+        return _raw(
+            '<div class="panel muted">The paper strategy has not made an entry yet. The first '
+            "appears here after the next nightly run.</div>" + finding
+        )
+    latest = max(calls["based_on_session"])
+    mine = entries[entries["based_on_session"] == latest]
+    target = calls.loc[calls["based_on_session"] == latest, "target_session"].dropna()
+    pending = target.empty
+    if pending:
+        heading = f"Paper strategy for {_upcoming(latest)}"
+    else:
+        heading = f"Paper strategy for {_session_time(target.iloc[0])}"
+
+    if mine.empty:
+        called = {
+            r.model for r in records if isinstance(r, Prediction) and r.based_on_session == latest
+        }
+        absent = [display_name(name) for name in RULE_MODELS if name not in called]
+        who = f" (no call from {', '.join(absent)})" if absent else ""
+        sub = f'<p class="call-sub muted">After the close on {html.escape(_long_date(latest))}.</p>'
+        body = (
+            f'<div class="paper-state">{NO_ENTRY}</div><p>{html.escape(_no_entry_reason(who))}</p>'
+        )
+    else:
+        entry = mine.iloc[0]
+        sub = (
+            _pending_note(latest, "entries") if pending else '<p class="call-sub muted">Scored.</p>'
+        )
+        gate = "open" if bool(entry["gate_open"]) else "closed"
+        said = "say" if pending else "said"
+        detail = (
+            f"{int(entry['models_up'])} of {len(RULE_MODELS)} models {said} up; the "
+            f"volatility gate is {gate}."
+            if pending
+            else f"{int(entry['models_up'])} of {len(RULE_MODELS)} models {said} up; the "
+            f"volatility gate was {gate}."
+        )
+        closed = ""
+        if not pending:
+            way = "closed up" if bool(entry["went_up"]) else "did not close up"
+            closed = f'<p class="range-result">That session {way}.</p>'
+        body = (
+            f'<div class="paper-state">{html.escape(state_name(bool(entry["holding"])))}</div>'
+            f"<p>{html.escape(detail)}</p>{closed}"
+        )
+    return _raw(
+        f'<div class="call-head"><p class="call-heading">{heading}</p>{ADVICE_TAG}</div>{sub}'
+        f'<div class="paper-panel">{PAPER_TAG}{body}{finding}</div>'
+        '<p class="muted small">A simulated position, published so it can be scored. '
+        "An experiment, not advice.</p>"
+    )
+
+
+def _no_entry_reason(who: str) -> str:
+    return (
+        f"The rule needs a call from all {len(RULE_MODELS)} models and at least one made "
+        f"none{who}. This session is left out of both the paper strategy and the "
+        "buy-and-hold comparison, and is never filled in afterwards."
+    )
+
+
+def paper_record_fragment(records: Sequence[Record]) -> str:
+    """The live counts: sessions on the right side against sessions that closed up
+    for buy-and-hold, on the same sessions, with the missed sessions beside them."""
+    if scored_paper_strategy(records).empty:
+        return _raw('<div class="panel muted">The paper strategy has no entries yet.</div>')
+    record = live_record(records)
+    n = record.sessions
+    intro = (
+        f"{n} session{'s have' if n != 1 else ' has'} both an entry and an outcome so far. "
+        "A session is on the right side when the strategy was Holding and it closed up, or "
+        "In cash and it did not. Buy-and-hold is Holding every session, so its right-side "
+        "sessions are the ones that closed up, counted on the same sessions."
+    )
+
+    def share(k: int) -> str:
+        if not n:
+            return "n/a"
+        return (
+            f"{_percent(k / n)}<br><span class='muted small'>"
+            f"{_interval(wilson_interval(k, n))}</span>"
+        )
+
+    table = _table(
+        (
+            Column("Strategy"),
+            Column("Sessions compared"),
+            Column("On the right side"),
+            Column("Share<br><span class='muted small'>95% interval</span>", label="Share"),
+        ),
+        [
+            (PAPER_NAMES[PAPER_STRATEGY], str(n), str(record.right_side), share(record.right_side)),
+            (PAPER_NAMES[PAPER_BENCHMARK], str(n), str(record.went_up), share(record.went_up)),
+        ],
+    )
+    missed = f"Sessions with no entry: {record.missed}."
+    if record.missed:
+        left_out = "It is" if record.missed == 1 else "They are"
+        missed += f" {left_out} left out of both rows."
+    split = (
+        f'<p class="muted">Holding on {record.holding} of the {n} '
+        f"({record.holding_went_up} closed up); In cash on {record.in_cash} "
+        f"({record.in_cash_not_up} did not close up).</p>"
+        if n
+        else ""
+    )
+    notes = "".join(f"<p>{html.escape(line)}</p>" for line in LIVE_COUNT_NOTES)
+    return _raw(
+        f'<p class="muted">{html.escape(intro)}</p>{table}'
+        f'<p class="paper-missed">{html.escape(missed)}</p>{split}'
+        f'<div class="paper-notes">{notes}</div>'
+    )
+
+
+def paper_findings(report: Mapping[str, Any]) -> list[str]:
+    """Plain-English findings from the paper strategy's backtest, from its numbers."""
+    data, strategies = report["data"], report["strategies"]
+    cost = str(report["primary_cost_bps"])
+    ours, theirs = strategies[PAPER_STRATEGY], strategies[PAPER_BENCHMARK]
+    mine, hold = ours["by_cost_bps"][cost], theirs["by_cost_bps"][cost]
+    lines = [paper_finding(report)]
+    row = next(r for r in report["comparisons"] if r["strategy"] == PAPER_STRATEGY)
+    gap = row["annualised_return_difference_interval"]
+    return_verdict = (
+        "more than buy-and-hold"
+        if gap[0] is not None and gap[0] > 0
+        else "less than buy-and-hold"
+        if gap[1] is not None and gap[1] < 0
+        else "not detectably different from buy-and-hold"
+    )
+    difference = (
+        f"{_points(row['annualised_return_difference'])}, 95% interval "
+        f"{_interval(gap, points=True).strip('()')}"
+    ).replace("-", "\u2212")
+    lines.append(
+        f"Its simulated return was {_percent(mine['annualised_return'])} a year against "
+        f"{_percent(hold['annualised_return'])}: {return_verdict} ({difference})."
+    )
+    lines.append(
+        f"It was Holding on {_percent(ours['time_in_market'])} of sessions and traded "
+        f"{ours['trades']:,} times. Its worst fall was {_fall(mine['worst_drawdown'])} against "
+        f"{_fall(hold['worst_drawdown'])} for buy-and-hold; a fall has no interval, so read it "
+        "as a description of this one history."
+    )
+    lines.append(
+        f"The volatility gate was open on {_percent(data['share_gate_open'])} of sessions, so "
+        "it rarely closed: the strategy held the same position as the models' majority alone "
+        f"on {_percent(data['share_same_position_as_majority'])} of sessions. In practice it is "
+        "close to the majority rule alone."
+    )
+    cause = gate_cause(report)
+    if cause:
+        lines.append(cause)
+    free = ours["by_cost_bps"].get("0", {}).get("sharpe_ratio")
+    dear = ours["by_cost_bps"].get("10", {}).get("sharpe_ratio")
+    if free is not None and dear is not None:
+        lines.append(
+            f"Trading costs matter: its Sharpe ratio would be {free:.2f} with no costs and "
+            f"{dear:.2f} at 10 basis points per trade."
+        )
+    parts = [r for r in report["comparisons"] if r["strategy"] != PAPER_STRATEGY]
+    if parts and all(r["verdict"] == "no detectable difference" for r in parts):
+        lines.append(
+            "Neither part of the rule on its own, the models' majority or the gate, "
+            "differed detectably from buy-and-hold."
+        )
+    else:
+        for r in parts:
+            lines.append(
+                f"{_paper_name(r['strategy'])} was {r['verdict']} against buy-and-hold on "
+                "risk-adjusted return."
+                if r["verdict"] != "no detectable difference"
+                else f"{_paper_name(r['strategy'])} did not differ detectably from buy-and-hold."
+            )
+    return lines
+
+
+GATE_CAUSE_MARGIN = 0.05
+"""How much more often the gate must have been open than in the check below before
+the early history is named as the reason."""
+
+
+def gate_cause(report: Mapping[str, Any]) -> str:
+    """Why the gate closed as rarely as it did, stated only where the report's own
+    check supports it.
+
+    The check re-runs the gate with a history that starts at the first tested
+    session. The early history is named as the cause only if that makes the gate
+    close clearly more often AND the early sessions hold more than their share of
+    the history's values above the final threshold. Otherwise the check is reported
+    without a cause.
+    """
+    gate, data = report["gate"], report["data"]
+    check = gate["check_share_open_with_history_from_first_tested_session"]
+    if check is None:
+        return ""
+    early_share = gate["history_share_before_first_tested_session"]
+    early_above = gate["share_of_values_above_final_threshold_from_before_first_tested_session"]
+    began = gate["first_history_session"][:4]
+    tested_from = f"{date.fromisoformat(gate['first_tested_session']):%B %Y}"
+    explained = (
+        data["share_gate_open"] - check > GATE_CAUSE_MARGIN
+        and early_above is not None
+        and early_above > early_share
+    )
+    if not explained:
+        return (
+            "Why it closed that rarely is not explained by the early history: with a history "
+            f"starting in {tested_from} the same gate would have been open on "
+            f"{_percent(check)} of sessions."
+        )
+    return (
+        "The reason was checked. The gate's threshold comes from every earlier session, and "
+        f"those begin in {began}: the sessions before {tested_from} are "
+        f"{_percent(early_share)} of that history but {_percent(early_above)} of its values "
+        f"above the final threshold. The threshold fell from "
+        f"{_percent(gate['threshold_first_fold'])} to {_percent(gate['threshold_last_fold'])} "
+        f"daily volatility over the test, while the typical forecast was "
+        f"{_percent(gate['median_forecast_tested'])}. With a history starting in "
+        f"{tested_from} instead, the same gate would have been open on {_percent(check)} of "
+        "sessions."
+    )
+
+
+def paper_backtest_fragment(report: Mapping[str, Any]) -> str:
+    """Findings and the table for the paper strategy's backtest."""
+    cost = str(report["primary_cost_bps"])
+    versus = {row["strategy"]: row for row in report["comparisons"]}
+    points = "".join(f"<li>{html.escape(line)}</li>" for line in paper_findings(report))
+    rows = []
+    for name, row in report["strategies"].items():
+        money = row["by_cost_bps"][cost]
+        gap = versus.get(name)
+        difference = (
+            '<span class="muted">benchmark</span>'
+            if gap is None
+            else f"{_plain_signed(gap['sharpe_difference'])}<br><span class='muted small'>"
+            f"({_plain_signed(gap['sharpe_difference_interval'][0])} to "
+            f"{_plain_signed(gap['sharpe_difference_interval'][1])})</span>"
+        )
+        rows.append(
+            (
+                f"{html.escape(_paper_name(name))}<br><span class='muted small'>"
+                f"{html.escape(PAPER_DESCRIPTIONS.get(str(name), ''))}</span>",
+                _percent(row["time_in_market"]),
+                f"{money['sharpe_ratio']:.2f}<br><span class='muted small'>"
+                f"({money['sharpe_ratio_interval'][0]:.2f} to "
+                f"{money['sharpe_ratio_interval'][1]:.2f})</span>",
+                difference,
+                f"{_percent(money['annualised_return'])}<br><span class='muted small'>"
+                f"{_interval(money['annualised_return_interval'])}</span>",
+                f"{100 * money['total_return']:,.0f}%",
+                _fall(money["worst_drawdown"]),
+            )
+        )
+    table = _table(
+        (
+            Column("Strategy"),
+            Column("Time in the market"),
+            Column(
+                "Sharpe ratio<br><span class='muted small'>the primary measure</span>",
+                label="Sharpe ratio",
+            ),
+            Column("Sharpe vs buy-and-hold"),
+            Column(
+                f"Simulated return per year<br><span class='muted small'>after {cost} basis "
+                "points per trade</span>",
+                label="Return per year after costs",
+            ),
+            Column("Total return"),
+            Column("Worst fall"),
+        ),
+        rows,
+    )
+    return _raw(
+        f'<ul class="findings">{points}</ul>{table}'
+        '<p class="muted small">Ranges in brackets are 95% intervals. The Sharpe ratio is '
+        "the average daily return divided by how much it varies, scaled to a year; cash "
+        "earns nothing. Simulated figures from applying the rule to history; they are not "
+        "real results.</p>"
+    )
+
+
+def _paper_name(name: object) -> str:
+    return PAPER_NAMES.get(str(name), str(name))
+
+
+def _plain_signed(value: float | None) -> str:
+    """A signed number to two places, with a real minus sign."""
+    return "n/a" if value is None else f"{value:+.2f}".replace("-", "\u2212")
+
+
+def _fall(value: float | None) -> str:
+    """A drawdown as a positive percentage: -0.516 is "51.6%"."""
+    return "n/a" if value is None else f"{100 * abs(value):.1f}%"
+
+
 def plotly_loader_fragment() -> str:
     """One script tag that loads the charting library before any chart on the page."""
     version = get_plotlyjs_version()
@@ -941,12 +1317,25 @@ def build_fragments(
     news: Sequence[Collection] = (),
     *,
     volatility: Mapping[str, Any],
+    paper: Mapping[str, Any] | None = None,
 ) -> dict[str, str]:
     """Every generated file for the NVIDIA page, by file name.
 
-    `report` is the direction backtest's report and `volatility` the volatility one.
+    `report` is the direction backtest's report, `volatility` the volatility one
+    and `paper` the paper strategy's; without `paper` its three fragments are left
+    out (the command always passes it).
     """
+    paper_fragments = (
+        {}
+        if paper is None
+        else {
+            "paper.md": paper_fragment(records, paper),
+            "paper_record.md": paper_record_fragment(records),
+            "paper_backtest.md": paper_backtest_fragment(paper),
+        }
+    )
     return {
+        **paper_fragments,
         "plotly.md": plotly_loader_fragment(),
         "status.md": status_fragment(records),
         "news.md": news_fragment(news),
@@ -1316,6 +1705,12 @@ def main(argv: Sequence[str] | None = None, *, report: Callable[[str], None] = _
         default=None,
         help="default: reports/nvda_volatility.json",
     )
+    parser.add_argument(
+        "--paper-report",
+        type=Path,
+        default=None,
+        help="default: reports/nvda_paper_strategy.json",
+    )
     parser.add_argument("--news-dir", type=Path, default=None, help="default: news/nvda")
     args = parser.parse_args(argv)
     site_dir: Path = args.site_dir.resolve()
@@ -1323,6 +1718,7 @@ def main(argv: Sequence[str] | None = None, *, report: Callable[[str], None] = _
     log_path: Path = args.log or root / "predictions" / "nvda.jsonl"
     report_path: Path = args.report or root / "reports" / "nvda_backtest.json"
     volatility_path: Path = args.volatility_report or root / "reports" / "nvda_volatility.json"
+    paper_path: Path = args.paper_report or root / "reports" / "nvda_paper_strategy.json"
     news_dir: Path = args.news_dir or root / "news" / "nvda"
     try:
         if not report_path.exists():
@@ -1331,8 +1727,13 @@ def main(argv: Sequence[str] | None = None, *, report: Callable[[str], None] = _
             raise FileNotFoundError(
                 f"{volatility_path} not found; run the volatility backtest first"
             )
+        if not paper_path.exists():
+            raise FileNotFoundError(
+                f"{paper_path} not found; run the paper strategy backtest first"
+            )
         backtest = json.loads(report_path.read_text(encoding="utf-8"))
         volatility = json.loads(volatility_path.read_text(encoding="utf-8"))
+        paper = json.loads(paper_path.read_text(encoding="utf-8"))
         records = read_log(log_path)
         news = load_recent(news_dir, days=NEWS_DAYS_SHOWN)
     except (FileNotFoundError, LogError, NewsError, json.JSONDecodeError) as exc:
@@ -1340,7 +1741,7 @@ def main(argv: Sequence[str] | None = None, *, report: Callable[[str], None] = _
         return 1
     out = site_dir / GENERATED_DIR
     out.mkdir(parents=True, exist_ok=True)
-    fragments = build_fragments(backtest, records, news, volatility=volatility)
+    fragments = build_fragments(backtest, records, news, volatility=volatility, paper=paper)
     for name, content in fragments.items():
         (out / name).write_text(content, encoding="utf-8")
     stamp = datetime.now(tz=UTC).strftime("%Y-%m-%d %H:%M UTC")

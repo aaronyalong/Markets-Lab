@@ -156,7 +156,8 @@ def run_paper_backtest(
         raise ValueError("the models were not tested on the same sessions")
 
     majority = majority_series({name: s.to_numpy(dtype=bool) for name, s in calls.items()})
-    gate = gate_series(history.loc[tested].to_numpy(), gate_thresholds(history, folds))
+    thresholds = gate_thresholds(history, folds)
+    gate = gate_series(history.loc[tested].to_numpy(), thresholds)
     positions = {
         STRATEGY: majority & gate,
         BENCHMARK: np.ones(len(tested), dtype=bool),
@@ -194,7 +195,11 @@ def run_paper_backtest(
             "last_tested_session": _date(tested[-1]),
             "share_majority_up": _number(float(majority.mean())),
             "share_gate_open": _number(float(gate.mean())),
+            "share_same_position_as_majority": _number(
+                float(((majority & gate) == majority).mean())
+            ),
         },
+        "gate": gate_summary(history, folds, thresholds, config),
         "validation": {
             "scheme": "walk-forward, expanding window",
             "initial_train_sessions": config.initial_train_sessions,
@@ -242,6 +247,59 @@ def gate_thresholds(history: pd.Series, folds: Sequence[Fold]) -> np.ndarray:
             for fold in folds
         ]
     )
+
+
+GATE_CHECK_WARM_UP = 252
+"""Sessions of history the check below waits for before its first threshold."""
+
+
+def gate_summary(
+    history: pd.Series,
+    folds: Sequence[Fold],
+    thresholds: np.ndarray,
+    config: WalkForwardConfig,
+) -> dict[str, Any]:
+    """How the gate's threshold moved, and a check on why it closed as rarely as it did.
+
+    The check asks what the same gate would have done with a history that starts
+    at the first tested session (after `GATE_CHECK_WARM_UP` sessions, refitted as
+    often as the real one). It explains the result and is not a candidate rule.
+    """
+    start = folds[0].test_start
+    forecasts = history.iloc[start:].to_numpy(dtype="float64")
+    final_history = history.iloc[: folds[-1].train_end]
+    above = final_history[final_history.to_numpy() > thresholds[-1]]
+    early = above.index < history.index[start]
+    summary: dict[str, Any] = {
+        "first_history_session": _date(history.index[0]),
+        "first_tested_session": _date(history.index[start]),
+        "threshold_first_fold": _number(float(thresholds[0])),
+        "threshold_last_fold": _number(float(thresholds[-1])),
+        "median_forecast_tested": _number(float(np.median(forecasts))),
+        "history_share_before_first_tested_session": _number(start / len(final_history)),
+        "share_of_values_above_final_threshold_from_before_first_tested_session": (
+            _number(float(early.mean())) if len(above) else None
+        ),
+        "check_warm_up_sessions": GATE_CHECK_WARM_UP,
+        "check_share_open_with_history_from_first_tested_session": None,
+        "check_sessions": 0,
+    }
+    later = history.iloc[start:]
+    if len(later) > GATE_CHECK_WARM_UP:
+        check_folds = make_folds(
+            len(later),
+            WalkForwardConfig(
+                initial_train_sessions=GATE_CHECK_WARM_UP, refit_every=config.refit_every
+            ),
+        )
+        check_open = gate_series(
+            later.iloc[GATE_CHECK_WARM_UP:].to_numpy(), gate_thresholds(later, check_folds)
+        )
+        summary["check_share_open_with_history_from_first_tested_session"] = _number(
+            float(check_open.mean())
+        )
+        summary["check_sessions"] = len(check_open)
+    return summary
 
 
 def summarise(
@@ -352,7 +410,19 @@ def format_report(report: Mapping[str, Any]) -> str:
             f"{_pair_text(row['annualised_return_difference_interval'], points=True)}: "
             f"{row['verdict']}"
         )
-    lines += ["", report["finding"]]
+    gate = report["gate"]
+    lines += [
+        "",
+        f"Gate threshold: {_percent(gate['threshold_first_fold'])} in the first fold, "
+        f"{_percent(gate['threshold_last_fold'])} in the last; median forecast "
+        f"{_percent(gate['median_forecast_tested'])}. Same position as the majority alone on "
+        f"{_percent(data['share_same_position_as_majority'])} of sessions. Check: with a history "
+        f"from {gate['first_tested_session']} the gate is open on "
+        f"{_percent(gate['check_share_open_with_history_from_first_tested_session'])} of "
+        f"{gate['check_sessions']:,} sessions.",
+        "",
+        report["finding"],
+    ]
     return "\n".join(lines)
 
 

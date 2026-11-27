@@ -1044,6 +1044,53 @@ a:hover {
   }
 }
 
+// The paper strategy's state. As neutral as the stance panel it borrows from: the
+// two states are plain words in the text colour, never green or red.
+.paper-panel {
+  @extend .stance-panel;
+
+  .tag {
+    margin-bottom: 0.7rem;
+  }
+
+  p {
+    margin: 0.4rem 0 0;
+    font-size: 1.05rem;
+  }
+}
+
+.paper-state {
+  @extend .stance-number;
+}
+
+.paper-finding {
+  @extend .stance-backtest;
+}
+
+// Beside the live counts: how many sessions had no entry, as readable as the
+// counts themselves, then the two sentences on what the counts cannot show.
+.paper-missed {
+  font-weight: 600;
+  color: $lab-text;
+  margin-bottom: 0.3rem;
+}
+
+.paper-notes {
+  padding: 0.9rem 1.1rem;
+  border: 1px solid $lab-border;
+  border-radius: 12px;
+  background: $lab-panel;
+  color: $lab-text;
+
+  p {
+    margin: 0;
+  }
+
+  p + p {
+    margin-top: 0.5rem;
+  }
+}
+
 // On phones each table row becomes a card: the first cell is its title, every
 // other cell one line with its column's name (data-label) on the left and the
 // value on the right. The header row is hidden from sight but kept for screen

@@ -34,7 +34,7 @@ website:
       - href: disclaimer.qmd
         text: Disclaimer
   page-footer:
-    center: "Research and education only. **Not financial advice.** No buy or sell signals. [Read the disclaimer](/disclaimer.qmd). [Built by [Aaron Yalong](https://aaronyalong.com).]{.byline}"
+    center: "Research and education only. **Not financial advice.** No buy or sell signals. Includes one simulated strategy, logged and scored. Not a recommendation. [Read the disclaimer](/disclaimer.qmd). [Built by [Aaron Yalong](https://aaronyalong.com).]{.byline}"
 
 format:
   html:

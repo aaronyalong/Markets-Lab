@@ -67,6 +67,27 @@ five. The first one shown is the simple baseline the others are measured against
 
 ::::: {.band}
 
+[A simulated strategy]{.eyebrow}
+
+## Paper strategy {.section-title}
+
+One fixed rule turns the calls above into a pretend position, so that they can be
+scored as a whole. After each close it is either "Holding" NVDA for the next
+session or "In cash". It is Holding only when at least four of the six models say
+up and the volatility gate is open, meaning the simple baseline's forecast of the
+next move is not unusually large. No money is involved, and it is not a signal to
+follow.
+
+The rule and the way it is scored were written down before any result was seen.
+One thing about it was not neutral: the volatility gate was chosen knowing that
+volatility is predictable, the one positive result on this page.
+
+{{< include /_generated/paper.md >}}
+
+:::::
+
+::::: {.band}
+
 [Live, since the log started]{.eyebrow}
 
 ## Track record {.section-title}
@@ -82,6 +103,10 @@ enforced.
 ### How the ranges have held up
 
 {{< include /_generated/range_record.md >}}
+
+### The paper strategy so far
+
+{{< include /_generated/paper_record.md >}}
 
 :::::
 
@@ -151,6 +176,13 @@ The range forecasters were tested on the same days in the same way: each range w
 made using only the days before it.
 
 {{< include /_generated/range_backtest.md >}}
+
+### The paper strategy, on the same history
+
+The same days and the same test again, this time for the fixed rule that combines
+the six models with the volatility gate, against simply holding the stock.
+
+{{< include /_generated/paper_backtest.md >}}
 
 :::::
 
@@ -226,6 +258,27 @@ only, so it does not assume moves follow a bell curve. Afterwards the log record
 whether the move fell inside the range, below it or above it, and nothing else
 about the move.
 
+### The paper strategy
+
+A simulated position built from the calls, to score them as a whole. After each
+close it is "Holding" NVDA for the next session when at least four of the six
+models say up and the volatility gate is open; otherwise it is "In cash". The gate
+is open unless the weighted recent average's volatility forecast is above the 80th
+percentile of its own past values. The four-of-six and 80th-percentile settings
+were fixed in advance and are not adjusted.
+
+It is measured against holding the stock throughout. The main measure is
+risk-adjusted return (the Sharpe ratio: average daily return divided by how much it
+varies) after costs, with total return, worst fall and time in the market reported
+beside it. The gate was chosen knowing that volatility is predictable, so the
+backtest is kinder to it than a rule chosen blind would deserve.
+
+Live, the log records only the state and the two things the rule looked at. If any
+of the six models makes no call for a session, the strategy has no entry for it:
+that session is counted as missed, left out of both the strategy and the
+buy-and-hold comparison, and never filled in afterwards. Because the log holds no
+returns, the live record is a count of sessions, not a return.
+
 ### The test
 
 Testing is walk-forward. A model is trained on the first five years, makes its
@@ -252,6 +305,9 @@ amount traded. Cash earns nothing in the simulation.
 - **Simulated is not real.** No slippage, no taxes, no interest on cash.
 - **A range is not a direction.** It says how far the move may go, both ways, and
   it is wrong by design one day in five.
+- **The paper strategy is not a signal.** It is one rule, partly chosen with
+  hindsight, built from models that did not beat always calling up. It is published
+  to be scored.
 - **The data source is unofficial.** Daily prices come from Yahoo Finance and are
   checked before use, but they are not guaranteed.
 

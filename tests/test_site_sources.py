@@ -39,7 +39,21 @@ def test_footer_on_every_page_says_not_financial_advice() -> None:
     footer = config.split("page-footer:", 1)[1].split("\nformat:", 1)[0]
     assert "Not financial advice" in footer
     assert "No buy or sell signals" in footer
+    assert "Includes one simulated strategy, logged and scored. Not a recommendation." in footer
     assert "disclaimer.qmd" in footer
+
+
+def test_the_nvidia_page_explains_the_paper_strategy_and_how_its_gate_was_chosen() -> None:
+    page = " ".join((SITE / "experiments" / "nvidia.qmd").read_text().split())
+    for fragment in ("paper.md", "paper_record.md", "paper_backtest.md"):
+        assert f"{{{{< include /_generated/{fragment} >}}}}" in page
+    # Stated on the page twice: beside the state, and in the method.
+    assert page.count("gate was chosen knowing that volatility is predictable") == 2
+    assert "it is not a signal to follow" in page
+    assert "**The paper strategy is not a signal.**" in page
+    # Its two states are never worded as an instruction.
+    without_benchmark = page.lower().replace("buy-and-hold", "").replace("buy or sell", "")
+    assert not re.search(r"\bbuy\b|\bsell\b", without_benchmark)
 
 
 def test_every_page_in_the_navigation_exists() -> None:

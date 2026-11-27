@@ -391,6 +391,48 @@ class TestPaperBacktest:
             shares["share_gate_open"]
         )
 
+    def test_the_gate_check_is_reported(
+        self, report: dict[str, Any], extended: Dataset, ewma: pd.Series
+    ) -> None:
+        labelled = extended.labelled()
+        folds = make_folds(len(labelled), CONFIG)
+        history = ewma.loc[labelled.features.index]
+        thresholds = paper.gate_thresholds(history, folds)
+        gate = report["gate"]
+        start = CONFIG.initial_train_sessions
+        assert gate["first_history_session"] == history.index[0].date().isoformat()
+        assert gate["first_tested_session"] == report["data"]["first_tested_session"]
+        assert gate["threshold_first_fold"] == pytest.approx(thresholds[0], abs=1e-6)
+        assert gate["threshold_last_fold"] == pytest.approx(thresholds[-1], abs=1e-6)
+        assert gate["median_forecast_tested"] == pytest.approx(
+            float(np.median(history.iloc[start:])), abs=1e-6
+        )
+        assert gate["history_share_before_first_tested_session"] == pytest.approx(
+            start / folds[-1].train_end, abs=1e-6
+        )
+        # The check: the same gate, with a history that starts at the first tested
+        # session and a year of warm-up.
+        later = history.iloc[start:]
+        check_folds = make_folds(
+            len(later),
+            WalkForwardConfig(
+                initial_train_sessions=paper.GATE_CHECK_WARM_UP, refit_every=CONFIG.refit_every
+            ),
+        )
+        expected = later.iloc[paper.GATE_CHECK_WARM_UP :].to_numpy() <= paper.gate_thresholds(
+            later, check_folds
+        )
+        assert gate["check_sessions"] == len(expected)
+        assert gate["check_share_open_with_history_from_first_tested_session"] == pytest.approx(
+            expected.mean(), abs=1e-6
+        )
+        same = report["data"]["share_same_position_as_majority"]
+        closed_while_majority_up = (
+            report["strategies"]["majority_only"]["time_in_market"]
+            - report["strategies"]["paper_strategy"]["time_in_market"]
+        )
+        assert same == pytest.approx(1 - closed_while_majority_up, abs=1e-5)
+
     def test_the_finding_follows_the_primary_interval(self, report: dict[str, Any]) -> None:
         primary = next(r for r in report["comparisons"] if r["strategy"] == "paper_strategy")
         assert primary["verdict"] == paper.verdict(primary["sharpe_difference_interval"])

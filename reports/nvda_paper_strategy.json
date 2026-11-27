@@ -1,12 +1,25 @@
 {
-  "generated_at": "2026-11-26T06:30:46Z",
+  "generated_at": "2026-11-26T09:30:09Z",
   "symbol": "NVDA",
   "data": {
     "tested_sessions": 5541,
     "first_tested_session": "2004-11-10",
     "last_tested_session": "2026-11-18",
     "share_majority_up": 0.561451,
-    "share_gate_open": 0.950009
+    "share_gate_open": 0.950009,
+    "share_same_position_as_majority": 0.982314
+  },
+  "gate": {
+    "first_history_session": "1999-11-04",
+    "first_tested_session": "2004-11-10",
+    "threshold_first_fold": 0.068402,
+    "threshold_last_fold": 0.042918,
+    "median_forecast_tested": 0.025323,
+    "history_share_before_first_tested_session": 0.185759,
+    "share_of_values_above_final_threshold_from_before_first_tested_session": 0.574797,
+    "check_warm_up_sessions": 252,
+    "check_share_open_with_history_from_first_tested_session": 0.774248,
+    "check_sessions": 5289
   },
   "validation": {
     "scheme": "walk-forward, expanding window",

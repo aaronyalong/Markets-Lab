@@ -53,7 +53,10 @@ down the next day?
   things the rule looked at (how many said up, and whether the gate was open); the
   log checks each entry against the six calls on record. A night when any of the
   six made no call has no entry and is never filled in; that session is counted as
-  missed and left out of both the strategy and the buy-and-hold comparison.
+  missed and left out of both the strategy and the buy-and-hold comparison. The
+  page shows its state as "Holding", "In cash" or "No entry for this session", and
+  its live record as counts of sessions only; risk-adjusted return, total return
+  and worst fall appear in the backtest section.
 - "No model beats buy-and-hold" is a valid outcome and will be reported as such.
 
 ### NVIDIA headlines
@@ -117,8 +120,9 @@ quarto render site    # build to site/_site/
 ```
 
 The NVIDIA page's numbers, tables and charts are written by
-`markets_lab.analysis.nvda.site_page` from `predictions/nvda.jsonl` and
-`reports/nvda_backtest.json` into `site/_generated/` (gitignored). Quarto reruns it
+`markets_lab.analysis.nvda.site_page` from `predictions/nvda.jsonl` and the three
+reports (`reports/nvda_backtest.json`, `nvda_volatility.json` and
+`nvda_paper_strategy.json`) into `site/_generated/` (gitignored). Quarto reruns it
 before every render, but the files must exist once before Quarto will start, hence
 the first command.
 
