@@ -14,6 +14,7 @@ import pytest
 
 from context_frames import context_for, make_publications, sec_getter, yahoo_downloader
 from markets_lab.analysis.nvda import nightly as nightly_module
+from markets_lab.analysis.nvda import prediction_log
 from markets_lab.analysis.nvda.backtest import (
     BASELINE_FACTORIES,
     CONTEXT_MODEL_FACTORIES,
@@ -858,6 +859,9 @@ class TestRanges:
         assert "appended range outcome: 2030-03-15 closed above ewma_94's range" in lines
 
 
+WORKFLOW = Path(__file__).resolve().parents[1] / ".github" / "workflows" / "nightly.yml"
+
+
 def says(up: bool) -> PredictorFactory:
     """A stand-in model that always makes the same call."""
 
@@ -1144,6 +1148,78 @@ class TestPaperStrategy:
         assert "paper strategy: Holding" not in output and "paper strategy: In cash" not in output
 
 
+class TestWhoMayWriteTheLog:
+    """A local run cannot write the repository's own log; only the workflow can."""
+
+    @pytest.fixture
+    def tracked(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+        folder = tmp_path / "repo" / "predictions"
+        folder.mkdir(parents=True)
+        monkeypatch.setattr(prediction_log, "TRACKED_LOG_DIR", folder)
+        monkeypatch.delenv(prediction_log.LOG_WRITER_ENV, raising=False)
+        return folder / "nvda.jsonl"
+
+    def test_a_run_is_refused_before_anything_is_downloaded(self, tracked: Path) -> None:
+        def no_download(_symbol: str) -> pd.DataFrame:
+            raise AssertionError("nothing should be downloaded")
+
+        with pytest.raises(LogError, match="only the nightly workflow may write"):
+            run_nightly(
+                now=at("2030-03-15 06:00"),
+                log_path=tracked,
+                downloader=no_download,
+                factories=FACTORIES,
+                context_factories={},
+                range_factories={},
+                min_rows=100,
+            )
+        assert not tracked.exists()
+
+    def test_the_command_fails_loudly_and_writes_nothing(self, tracked: Path) -> None:
+        lines: list[str] = []
+        code = main(
+            ["--log", str(tracked)],
+            now=lambda: at("2030-03-15 06:00"),
+            downloader=lambda _symbol: as_yahoo(history()),
+            factories=FACTORIES,
+            context_factories={},
+            range_factories={},
+            report=lines.append,
+            min_rows=100,
+        )
+        assert code == 1
+        assert lines[0].startswith("NIGHTLY RUN FAILED, nothing was written: refusing to write")
+        assert not tracked.exists()
+
+    def test_a_dry_run_is_still_allowed(self, tracked: Path) -> None:
+        outcomes, predictions = nightly(tracked, history(), "2030-03-15 06:00", dry_run=True)
+        assert outcomes == [] and [p.model for p in predictions] == MODELS
+        assert not tracked.exists()
+
+    def test_the_workflow_run_writes_it(
+        self, tracked: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv(prediction_log.LOG_WRITER_ENV, prediction_log.NIGHTLY_WORKFLOW)
+        _, predictions = nightly(tracked, history(), "2030-03-15 06:00")
+        assert read_log(tracked) == predictions
+
+    def test_only_the_nightly_workflows_own_step_carries_the_mark(self) -> None:
+        workflows = sorted(WORKFLOW.parent.glob("*.yml"))
+        holders = [w.name for w in workflows if prediction_log.LOG_WRITER_ENV in w.read_text()]
+        assert holders == ["nightly.yml"]
+        text = WORKFLOW.read_text()
+        assert text.count(prediction_log.LOG_WRITER_ENV) == 1
+        step = text.split("- name: Record outcomes and append predictions", 1)[1]
+        step = step.split("\n      - name:", 1)[0]
+        assert f"{prediction_log.LOG_WRITER_ENV}: {prediction_log.NIGHTLY_WORKFLOW}" in step
+
+    def test_the_checks_workflow_compares_the_log_with_the_commit_before(self) -> None:
+        checks = (WORKFLOW.parent / "checks.yml").read_text()
+        assert "fetch-depth: 2" in checks
+        assert "git show HEAD^:predictions/nvda.jsonl" in checks
+        assert '--previous "$RUNNER_TEMP/previous.jsonl"' in checks
+
+
 class TestDefaults:
     def test_default_predictors_are_the_baselines_and_measured_models(self) -> None:
         assert list(default_factories()) == [*BASELINE_FACTORIES, *MODEL_FACTORIES]
@@ -1180,9 +1256,6 @@ class TestDefaults:
                 assert 0 < prediction.probability_up < 1
             else:
                 assert prediction.probability_up is None
-
-
-WORKFLOW = Path(__file__).resolve().parents[1] / ".github" / "workflows" / "nightly.yml"
 
 
 class TestWorkflowFile:

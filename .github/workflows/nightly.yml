@@ -75,6 +75,9 @@ jobs:
       # the job. Any other failure stops here, with nothing written.
       - name: Record outcomes and append predictions
         id: nightly
+        env:
+          # The log refuses every writer but this step (see prediction_log.py).
+          MARKETS_LAB_LOG_WRITER: nightly-workflow
         run: |
           set +e
           uv run python -m markets_lab.analysis.nvda.nightly --log "$LOG"

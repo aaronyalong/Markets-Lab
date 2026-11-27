@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import itertools
 import json
+import shutil
+import subprocess
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -11,6 +13,7 @@ from typing import Any
 import pandas as pd
 import pytest
 
+from markets_lab.analysis.nvda import prediction_log
 from markets_lab.analysis.nvda.paper_strategy.rule import RULE_MODELS
 from markets_lab.analysis.nvda.prediction_log import (
     GENESIS_HASH,
@@ -917,3 +920,111 @@ class TestPaperStrategyScoring:
             "log is valid: 15 records (12 predictions, 1 outcomes, 0 range forecasts, "
             "0 range outcomes, 2 paper strategy entries)"
         ]
+
+
+REPOSITORY = Path(__file__).resolve().parents[1]
+
+
+class TestWhoMayWrite:
+    """Only the nightly workflow may write the repository's own log."""
+
+    @pytest.fixture
+    def guarded(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+        """A stand-in for the repository's predictions/ directory, with no writer set."""
+        folder = tmp_path / "repo" / "predictions"
+        folder.mkdir(parents=True)
+        monkeypatch.setattr(prediction_log, "TRACKED_LOG_DIR", folder)
+        monkeypatch.delenv(prediction_log.LOG_WRITER_ENV, raising=False)
+        return folder
+
+    def test_the_guarded_directory_is_the_repositorys_predictions_folder(self) -> None:
+        assert prediction_log.TRACKED_LOG_DIR == REPOSITORY / "predictions"
+        default = (REPOSITORY / prediction_log.DEFAULT_LOG_PATH).resolve()
+        assert default.parent == prediction_log.TRACKED_LOG_DIR.resolve()
+
+    def test_a_log_anywhere_else_is_written_freely(self, guarded: Path, tmp_path: Path) -> None:
+        elsewhere = tmp_path / "scratch" / "nvda.jsonl"
+        append_records(elsewhere, week())
+        assert read_log(elsewhere) == week()
+        del guarded
+
+    def test_the_tracked_log_is_refused_without_the_workflows_mark(self, guarded: Path) -> None:
+        with pytest.raises(LogError, match="only the nightly workflow may write"):
+            append_records(guarded / "nvda.jsonl", week())
+        assert list(guarded.iterdir()) == []
+
+    def test_an_existing_tracked_log_is_left_exactly_as_it_was(
+        self, guarded: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        path = guarded / "nvda.jsonl"
+        monkeypatch.setenv(prediction_log.LOG_WRITER_ENV, prediction_log.NIGHTLY_WORKFLOW)
+        append_records(path, week()[:2])
+        monkeypatch.delenv(prediction_log.LOG_WRITER_ENV)
+        before = path.read_bytes()
+        with pytest.raises(LogError, match="refusing to write"):
+            append_records(path, week()[2:3])
+        assert path.read_bytes() == before
+        assert [p.name for p in guarded.iterdir()] == ["nvda.jsonl"]  # no temporary file
+
+    @pytest.mark.parametrize("value", ["", "1", "true", "nightly", "Nightly-Workflow"])
+    def test_any_other_value_of_the_mark_is_refused(
+        self, guarded: Path, monkeypatch: pytest.MonkeyPatch, value: str
+    ) -> None:
+        monkeypatch.setenv(prediction_log.LOG_WRITER_ENV, value)
+        with pytest.raises(LogError, match="refusing to write"):
+            append_records(guarded / "nvda.jsonl", week())
+
+    def test_the_nightly_workflow_may_write_it(
+        self, guarded: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv(prediction_log.LOG_WRITER_ENV, prediction_log.NIGHTLY_WORKFLOW)
+        append_records(guarded / "nvda.jsonl", week())
+        assert read_log(guarded / "nvda.jsonl") == week()
+
+    def test_other_files_and_folders_under_it_are_guarded_too(self, guarded: Path) -> None:
+        for path in (guarded / "copy.jsonl", guarded / "deeper" / "nvda.jsonl"):
+            with pytest.raises(LogError, match="refusing to write"):
+                append_records(path, week())
+
+    def test_a_link_or_roundabout_path_into_it_is_guarded(
+        self, guarded: Path, tmp_path: Path
+    ) -> None:
+        link = tmp_path / "shortcut"
+        link.symlink_to(guarded, target_is_directory=True)
+        roundabout = guarded / ".." / "predictions" / "nvda.jsonl"
+        for path in (link / "nvda.jsonl", roundabout):
+            with pytest.raises(LogError, match="refusing to write"):
+                append_records(path, week())
+
+    def test_reading_and_verifying_need_no_mark(
+        self, guarded: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        path = guarded / "nvda.jsonl"
+        monkeypatch.setenv(prediction_log.LOG_WRITER_ENV, prediction_log.NIGHTLY_WORKFLOW)
+        append_records(path, week())
+        monkeypatch.delenv(prediction_log.LOG_WRITER_ENV)
+        assert read_log(path) == week()
+        assert main(["verify", "--log", str(path)], report=lambda _line: None) == 0
+
+
+class TestTheTrackedLogItself:
+    """A tripwire: whatever wrote it, the repository's log may only have grown."""
+
+    def test_it_is_the_committed_log_with_lines_only_added(self) -> None:
+        log = REPOSITORY / prediction_log.DEFAULT_LOG_PATH
+        if not log.exists():
+            pytest.skip("no prediction log yet")
+        git = shutil.which("git")
+        if git is None:
+            pytest.skip("git is not installed")
+        committed = subprocess.run(
+            [git, "show", f"HEAD:{prediction_log.DEFAULT_LOG_PATH.as_posix()}"],
+            cwd=REPOSITORY,
+            capture_output=True,
+            check=False,
+        )
+        if committed.returncode != 0:
+            pytest.skip("the log is not in the last commit (or this is not a git checkout)")
+        current = log.read_text(encoding="utf-8")
+        check_append_only(committed.stdout.decode("utf-8"), current)
+        parse_log(current)

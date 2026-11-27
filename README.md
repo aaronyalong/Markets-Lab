@@ -94,6 +94,12 @@ against the filing's XBRL data.
   with intervals). The one exception is a forecaster's own range for the next day,
   which is a forecast, not data.
 - Test fixtures are synthetic. No real market data is stored in this repository.
+- Only the nightly workflow writes `predictions/`. The log's one writing function
+  refuses the repository's own log unless the workflow's step has marked the run
+  (`MARKETS_LAB_LOG_WRITER=nightly-workflow`), so a local run of the nightly job
+  needs `--dry-run` or `--log` with a copy somewhere else. A test fails if the log
+  is anything but the committed log with lines added, and the checks workflow
+  compares it with the commit before. These catch accidents; they are not a lock.
 
 ## Repository layout
 

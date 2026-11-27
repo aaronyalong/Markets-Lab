@@ -45,6 +45,14 @@ What makes it trustworthy:
   same session, must count them correctly, and must be what the rule gives for
   that count and gate. A session where any of the six made no call has no entry.
 
+Who may write it: `append_records` is the only function that writes a log, and it
+refuses the repository's own log (anything under `predictions/` in this checkout)
+unless the environment says the nightly workflow is running
+(`MARKETS_LAB_LOG_WRITER=nightly-workflow`, set only in
+.github/workflows/nightly.yml). Everything else, a local run of the nightly job
+included, must use `--dry-run` or a log somewhere else. This guards against
+accidents, not against someone determined to set the variable.
+
 Check a log file from the repository root:
 
     uv run python -m markets_lab.analysis.nvda.prediction_log verify
@@ -78,6 +86,11 @@ MARKET_CLOSE = time(16, 0)
 PROBABILITY_DECIMALS = 4
 RETURN_DECIMALS = 4
 """Range bounds are stored as returns to this many places: 0.0312 is 3.12%."""
+
+TRACKED_LOG_DIR = Path(__file__).resolve().parents[4] / "predictions"
+"""The repository's own log directory, which only the nightly workflow may write."""
+LOG_WRITER_ENV = "MARKETS_LAB_LOG_WRITER"
+NIGHTLY_WORKFLOW = "nightly-workflow"
 
 BELOW, INSIDE, ABOVE = "below", "inside", "above"
 RANGE_POSITIONS = (BELOW, INSIDE, ABOVE)
@@ -330,6 +343,23 @@ def parse_log(text: str) -> list[Record]:
     return records
 
 
+def check_may_write(path: Path) -> None:
+    """Raise unless this process may write the log at `path`.
+
+    Any path outside the repository's `predictions/` directory is fine (tests and
+    scratch copies). Inside it, only the nightly workflow may write.
+    """
+    target = path.resolve()
+    tracked = TRACKED_LOG_DIR.resolve()
+    if target != tracked and tracked not in target.parents:
+        return
+    if os.environ.get(LOG_WRITER_ENV) != NIGHTLY_WORKFLOW:
+        raise LogError(
+            f"refusing to write {path}: only the nightly workflow may write the repository's "
+            f"prediction log. Use --dry-run, or --log with a copy outside {tracked}."
+        )
+
+
 def read_log(path: Path) -> list[Record]:
     """Read and verify a log file. A file that does not exist is an empty log."""
     if not path.exists():
@@ -346,6 +376,7 @@ def append_records(path: Path, new_records: Sequence[Record]) -> None:
     """
     if not new_records:
         return
+    check_may_write(path)
     existing = path.read_text(encoding="utf-8") if path.exists() else ""
     records = parse_log(existing)
     previous_hash = _last_hash(existing)

@@ -81,6 +81,7 @@ from markets_lab.analysis.nvda.prediction_log import (
     RangeOutcome,
     Record,
     append_records,
+    check_may_write,
     prediction_window,
     range_position,
     read_log,
@@ -447,6 +448,9 @@ def run_nightly(
     Nothing is written if the run is refused. If only the context models could
     not make their call, everything else is written and `skipped` names them.
     """
+    if not dry_run:
+        # Before any download: a run that may not write the log should say so at once.
+        check_may_write(log_path)
     fetched = fetch_daily(now=now, downloader=downloader, min_rows=min_rows)
     existing = read_log(log_path)
 

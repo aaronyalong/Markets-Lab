@@ -14,6 +14,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Two commits, so the log can be compared with the one before.
+          fetch-depth: 2
 
       - uses: astral-sh/setup-uv@v6
 
@@ -32,10 +35,16 @@ jobs:
       - name: Types
         run: uv run pyright
 
+      # The log must be valid, and it must be the previous commit's log with lines
+      # only added: a commit that rewrites it fails here.
       - name: Verify the prediction log
         run: |
-          if [ -f predictions/nvda.jsonl ]; then
-            uv run python -m markets_lab.analysis.nvda.prediction_log verify
-          else
+          if [ ! -f predictions/nvda.jsonl ]; then
             echo "No prediction log yet."
+          elif git cat-file -e HEAD^:predictions/nvda.jsonl 2>/dev/null; then
+            git show HEAD^:predictions/nvda.jsonl > "$RUNNER_TEMP/previous.jsonl"
+            uv run python -m markets_lab.analysis.nvda.prediction_log verify \
+              --previous "$RUNNER_TEMP/previous.jsonl"
+          else
+            uv run python -m markets_lab.analysis.nvda.prediction_log verify
           fi
